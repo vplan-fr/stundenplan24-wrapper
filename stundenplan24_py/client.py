@@ -18,7 +18,8 @@ class Endpoints:
     indiware_mobil = "{school_number}/mobil/mobdaten/Klassen{date}.xml"
 
     # indiware mobil teachers
-    indiware_mobil_teachers = "{school_number}/moble/mobdaten/Lehrer{date}.xml"
+    indiware_mobil_teachers = "{school_number}/moble/mobdaten/PlanLe{date}.xml"  # date cannot be "", use below
+    indiware_mobil_teachers2 = "{school_number}/moble/mobdaten/Lehrer.xml"
 
     # substitution plan students
     substitution_plan = "{school_number}/vplan/vdaten/VplanKl{date}.xml"

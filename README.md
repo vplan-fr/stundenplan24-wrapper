@@ -30,7 +30,7 @@ And two for teachers:
 
 They can be accessed at [www.stundenplan24.de](https://www.stundenplan24.de/).
 
-There are at least eight API endpoints. These are stored in [`studenplan24_py.Endpoints`](stundenplan24_py/client.py).
+There are at least nine API endpoints. These are stored in [`studenplan24_py.Endpoints`](stundenplan24_py/client.py).
 
 ## Translations from German
 
