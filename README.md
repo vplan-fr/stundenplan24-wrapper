@@ -3,6 +3,7 @@ A python wrapper for the `stundenplan24.de` API. This wrapper does not implement
 
 ## Requirements
 - Python 3.9+
+- requirements in [`requirements.txt`](requirements.txt)
 - `creds.json`
 
 ### `creds.json`
