@@ -4,6 +4,10 @@ from .client import (
     Endpoints
 )
 
+from . import (
+    vp_mobil
+)
+
 
 def parse_creds_json(json_str: str) -> tuple[int, Stundenplan24Credentials]:
     import json

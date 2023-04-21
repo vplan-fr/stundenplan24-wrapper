@@ -14,8 +14,25 @@ class Stundenplan24Credentials:
 
 
 class Endpoints:
+    # indiware mobil students
     indiware_mobil = "{school_number}/mobil/mobdaten/Klassen{date}.xml"
+
+    # indiware mobil teachers
+    indiware_mobil_teachers = "{school_number}/moble/mobdaten/Lehrer{date}.xml"
+
+    # substitution plan students
     substitution_plan = "{school_number}/vplan/vdaten/VplanKl{date}.xml"
+
+    # substitution plan teachers
+    substitution_plan_teachers = "{school_number}/vplanle/vdaten/VplanLe{date}.xml"
+
+    # week plan
+    week_plan_timetable_base = "{school_number}/wplan/wdatenk/SPlanKl_Basis.xml"
+    week_plan_timetable = "{school_number}/wplan/wdatenk/SPlanKl_Sw{school_week}.xml"
+    week_plan = "{school_number}/wplan/wdatenk/WPlanKl_{date}.xml"
+
+    # timetable
+    timetable = "{school_number}/splan/sdaten/splank.xml"
 
 
 class Stundenplan24Client:
@@ -47,7 +64,7 @@ class Stundenplan24Client:
         async with session.get(url, auth=auth) as response:
             return await response.text()
 
-    async def fetch_indiware_mobile(self, session: aiohttp.ClientSession, date: datetime.date | None = None) -> str:
+    async def fetch_indiware_mobil(self, session: aiohttp.ClientSession, date: datetime.date | None = None) -> str:
         url = self.get_url(Endpoints.indiware_mobil, date)
         return await self.fetch_url(url, session)
 

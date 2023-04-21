@@ -4,7 +4,6 @@ import xml.etree.ElementTree
 import aiohttp
 
 from stundeplan24_py import *
-from stundeplan24_py import vp_mobil
 
 
 async def main():
@@ -14,9 +13,9 @@ async def main():
     client = Stundenplan24Client(school_nr, creds)
 
     async with aiohttp.ClientSession() as session:
-        vpmobile_xml = await client.fetch_indiware_mobile(session)
+        iw_mobil_xml = await client.fetch_indiware_mobil(session)
 
-    day = vp_mobil.Day.from_xml(xml.etree.ElementTree.fromstring(vpmobile_xml))
+    day = vp_mobil.Day.from_xml(xml.etree.ElementTree.fromstring(iw_mobil_xml))
 
     breakpoint()
 
