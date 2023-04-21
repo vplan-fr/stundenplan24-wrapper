@@ -18,7 +18,7 @@ class Endpoints:
     indiware_mobil = "{school_number}/mobil/mobdaten/Klassen{date}.xml"
 
     # indiware mobil teachers
-    indiware_mobil_teachers = "{school_number}/moble/mobdaten/PlanLe{date}.xml"  # date cannot be "", use below
+    indiware_mobil_teachers = "{school_number}/moble/mobdaten/PlanLe{date}.xml"  # date must not be "", use below
     indiware_mobil_teachers2 = "{school_number}/moble/mobdaten/Lehrer.xml"
 
     # substitution plan students
@@ -30,7 +30,7 @@ class Endpoints:
     # week plan
     week_plan_timetable_base = "{school_number}/wplan/wdatenk/SPlanKl_Basis.xml"
     week_plan_timetable = "{school_number}/wplan/wdatenk/SPlanKl_Sw{school_week}.xml"
-    week_plan = "{school_number}/wplan/wdatenk/WPlanKl_{date}.xml"
+    week_plan = "{school_number}/wplan/wdatenk/WPlanKl_{date}.xml"  # date must not be ""
 
     # timetable
     timetable = "{school_number}/splan/sdaten/splank.xml"
