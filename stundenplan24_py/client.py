@@ -15,7 +15,8 @@ class Stundenplan24Credentials:
 
 class Endpoints:
     # indiware mobil students
-    indiware_mobil = "{school_number}/mobil/mobdaten/Klassen{date}.xml"
+    indiware_mobil = "{school_number}/mobil/mobdaten/PlanKl{date}.xml"  # date must not be "", use below
+    indiware_mobil2 = "{school_number}/mobil/mobdaten/Klassen.xml"
 
     # indiware mobil teachers
     indiware_mobil_teachers = "{school_number}/moble/mobdaten/PlanLe{date}.xml"  # date must not be "", use below
