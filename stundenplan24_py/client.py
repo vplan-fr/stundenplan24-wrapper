@@ -46,12 +46,9 @@ class Stundenplan24Client:
         self.credentials = credentials
         self.base_url = base_url
 
-    def get_url(self, endpoint: str, date: datetime.date | None = None) -> str:
-        date = date.strftime("%Y%m%d") if date is not None else ""
-
+    def get_url(self, endpoint: str) -> str:
         this_endpoint = endpoint.format(
-            school_number=self.school_number,
-            date=date
+            school_number=self.school_number
         )
 
         return urllib.parse.urljoin(self.base_url, this_endpoint)
@@ -67,9 +64,16 @@ class Stundenplan24Client:
             return await response.text()
 
     async def fetch_indiware_mobil(self, session: aiohttp.ClientSession, date: datetime.date | None = None) -> str:
-        url = self.get_url(Endpoints.indiware_mobil, date)
+        if date is None:
+            endpoint = Endpoints.indiware_mobil2
+        else:
+            endpoint = Endpoints.indiware_mobil.format(date=date.strftime("%Y%m%d"))
+
+        url = self.get_url(endpoint)
         return await self.fetch_url(url, session)
 
     async def fetch_substitution_plan(self, session: aiohttp.ClientSession, date: datetime.date | None = None) -> str:
-        url = self.get_url(Endpoints.substitution_plan, date)
+        url = self.get_url(Endpoints.substitution_plan)
+        if date is not None:
+            url = url.format(date=date.strftime("%Y%m%d"))
         return await self.fetch_url(url, session)

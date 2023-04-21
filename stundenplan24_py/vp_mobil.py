@@ -150,9 +150,9 @@ class Lesson:
         lesson.start = datetime.datetime.strptime(xml.find("Beginn").text, "%H:%M").time()
         lesson.end = datetime.datetime.strptime(xml.find("Ende").text, "%H:%M").time()
 
-        lesson.subject = Value(xml.find("Fa").text, False)
-        lesson.teacher = Value(xml.find("Le").text, False)
-        lesson.room = Value(xml.find("Ra").text, False)
+        lesson.subject = Value(xml.find("Fa").text, xml.find("Fa").attrib.get("FaAe") == "FaGeaendert")
+        lesson.teacher = Value(xml.find("Le").text, xml.find("Le").attrib.get("LeAe") == "LeGeaendert")
+        lesson.room = Value(xml.find("Ra").text, xml.find("Ra").attrib.get("RaAe") == "RaGeaendert")
 
         try:
             lesson.number = int(xml.find("Nr").text)
