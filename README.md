@@ -16,7 +16,7 @@ A python wrapper for the `stundenplan24.de` API. This wrapper does not implement
 ```
 
 ## APIs
-There are 4 Views for students:
+There are four views for students:
 
 - [X] Indiware Mobil (Schüler)
 - [ ] Vertretungsplan (Schüler)
