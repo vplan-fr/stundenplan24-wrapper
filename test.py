@@ -3,7 +3,7 @@ import xml.etree.ElementTree
 
 import aiohttp
 
-from stundeplan24_py import *
+from stundenplan24_py import *
 
 
 async def main():
