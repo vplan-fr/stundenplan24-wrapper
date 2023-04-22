@@ -84,3 +84,7 @@ class Crawler:
             await self.fetch(day)
 
             day += datetime.timedelta(days=1)
+
+    def all(self) -> typing.Iterator[Result]:
+        for date in os.listdir(self.folder):
+            yield from self._iterate_revisions(self.folder / date)
