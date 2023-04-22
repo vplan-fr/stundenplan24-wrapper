@@ -20,7 +20,7 @@ A python wrapper for the `stundenplan24.de` API. This wrapper does not implement
 There are four views for students:
 
 - [X] Indiware Mobil (Schüler)
-- [ ] Vertretungsplan (Schüler)
+- [X] Vertretungsplan (Schüler)
 - [ ] Wochenplan
 - [ ] Stundenplan
 
@@ -40,6 +40,9 @@ There are at least nine API endpoints. These are stored in [`studenplan24_py.End
 | Fach               | subject, e.g. `PH`    |
 | Kurs               | course, e.g. `7WInf1` |
 | Schulklasse        | form, e.g. `6c`       |
+| Jahrgang           | year, e.g. 11         |
 | Unterricht         | classes               |
 | Schulstunde (Zeit) | period                |
 | Unterrichtsstunde  | lesson                |
+| Klausur            | exam                  |
+| Kursleiter         | course teacher        |

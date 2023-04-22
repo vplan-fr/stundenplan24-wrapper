@@ -14,8 +14,10 @@ async def main():
 
     async with aiohttp.ClientSession() as session:
         iw_mobil_xml = await client.fetch_indiware_mobil(session)
+        subst_plan_xml = await client.fetch_substitution_plan(session)
 
-    day = vp_mobil.Day.from_xml(xml.etree.ElementTree.fromstring(iw_mobil_xml))
+    form_plan = iw_mobil.FormPlan.from_xml(xml.etree.ElementTree.fromstring(iw_mobil_xml))
+    subst_plan = substitution_plan.SubstitutionPlan.from_xml(xml.etree.ElementTree.fromstring(subst_plan_xml))
 
     breakpoint()
 

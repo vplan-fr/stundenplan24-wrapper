@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import dataclasses
 import datetime
-from xml.etree import ElementTree as ET
+import xml.etree.ElementTree as ET
+
+from stundenplan24_py.shared import parse_free_days, Value
 
 
-class Day:
+class FormPlan:
     plan_type: str
     timestamp: datetime.datetime
     plan_date: str
@@ -26,7 +28,10 @@ class Day:
         # parse head
         head = xml.find("Kopf")
         day.plan_type = head.find("planart").text
-        assert day.plan_type == "K", "A plan type ('Planart') other than 'K' is not supported."
+        assert day.plan_type == "K", (
+            f"Plan type {day.plan_type!r}. A plan type ('Planart') other than 'K' is not supported. "
+            "'K' is for 'Klassenplan', 'L' for 'Lehrerplan'."
+        )
 
         day.timestamp = datetime.datetime.strptime(head.find("zeitstempel").text, "%d.%m.%Y, %H:%M")
         day.plan_date = head.find("DatumPlan").text
@@ -40,9 +45,7 @@ class Day:
             day.school_number = None
 
         # parse free days
-        day.free_days = []
-        for free_day in xml.find("FreieTage"):
-            day.free_days.append(datetime.datetime.strptime(free_day.text, "%y%m%d").date())
+        day.free_days = parse_free_days(xml.find("FreieTage"))
 
         # parse classes
         day.forms = []
@@ -118,18 +121,6 @@ class Class:
     group: str | None
 
 
-@dataclasses.dataclass
-class Value:
-    content: str
-    was_changed: bool
-
-    def __str__(self):
-        return self.content
-
-    def __call__(self):
-        return self.content
-
-
 class Lesson:
     period: int
     start: datetime.time
@@ -150,9 +141,9 @@ class Lesson:
         lesson.start = datetime.datetime.strptime(xml.find("Beginn").text, "%H:%M").time()
         lesson.end = datetime.datetime.strptime(xml.find("Ende").text, "%H:%M").time()
 
-        lesson.subject = Value(xml.find("Fa").text, xml.find("Fa").attrib.get("FaAe") == "FaGeaendert")
-        lesson.teacher = Value(xml.find("Le").text, xml.find("Le").attrib.get("LeAe") == "LeGeaendert")
-        lesson.room = Value(xml.find("Ra").text, xml.find("Ra").attrib.get("RaAe") == "RaGeaendert")
+        lesson.subject = Value(xml.find("Fa").text, xml.find("Fa").get("FaAe") == "FaGeaendert")
+        lesson.teacher = Value(xml.find("Le").text, xml.find("Le").get("LeAe") == "LeGeaendert")
+        lesson.room = Value(xml.find("Ra").text, xml.find("Ra").get("RaAe") == "RaGeaendert")
 
         try:
             lesson.number = int(xml.find("Nr").text)
