@@ -1,0 +1,10 @@
+[project]
+name = "stundenplan24_py"
+version = "1.0.0"
+description = "A wrapper for the Stundenplan24 APIs."
+readme = "README.md"
+requires-python = ">=3.9"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]

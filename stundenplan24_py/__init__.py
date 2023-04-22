@@ -5,7 +5,7 @@ from .client import (
 )
 
 from . import (
-    iw_mobil,
+    indiware_mobil,
     substitution_plan,
 )
 

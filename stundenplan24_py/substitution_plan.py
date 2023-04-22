@@ -17,7 +17,7 @@ class SubstitutionPlan:
     file_name: str
     title: str
     school_name: str
-    timestamp: datetime.datetime
+    timestamp: datetime.datetime  # time of last update
 
     absent_teachers: list[str]
     absent_forms: list[str]

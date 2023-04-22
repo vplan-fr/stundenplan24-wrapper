@@ -9,7 +9,7 @@ from stundenplan24_py.shared import parse_free_days, Value
 
 class FormPlan:
     plan_type: str
-    timestamp: datetime.datetime
+    timestamp: datetime.datetime  # time of last update
     plan_date: str
     file_name: str
     native: str
