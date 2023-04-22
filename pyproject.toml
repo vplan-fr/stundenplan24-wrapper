@@ -1,5 +1,5 @@
 [project]
-name = "stundenplan24-wrapper"
+name = "stundenplan24_py"
 version = "1.0.0"
 description = "A wrapper for the Stundenplan24 APIs."
 readme = "README.md"
