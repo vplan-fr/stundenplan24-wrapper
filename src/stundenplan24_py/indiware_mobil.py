@@ -138,8 +138,10 @@ class Lesson:
         lesson = cls()
 
         lesson.period = int(xml.find("St").text)
-        lesson.start = datetime.datetime.strptime(xml.find("Beginn").text, "%H:%M").time()
-        lesson.end = datetime.datetime.strptime(xml.find("Ende").text, "%H:%M").time()
+        lesson.start = (datetime.datetime.strptime(xml.find("Beginn").text, "%H:%M").time()
+                        if xml.find("Beginn").text else None)
+        lesson.end = (datetime.datetime.strptime(xml.find("Ende").text, "%H:%M").time()
+                      if xml.find("Ende").text else None)
 
         lesson.subject = Value(xml.find("Fa").text, xml.find("Fa").get("FaAe") == "FaGeaendert")
         lesson.teacher = Value(xml.find("Le").text, xml.find("Le").get("LeAe") == "LeGeaendert")

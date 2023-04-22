@@ -61,9 +61,15 @@ class Stundenplan24Client:
         auth = aiohttp.BasicAuth(self.credentials.user_name, self.credentials.password)
 
         async with session.get(url, auth=auth) as response:
+            if response.status != 200:
+                raise RuntimeError(f"Got status code {response.status} from {url!r}.")
+
             return await response.text()
 
-    async def fetch_indiware_mobil(self, session: aiohttp.ClientSession, date: datetime.date | None = None) -> str:
+    async def fetch_indiware_mobil(self,
+                                   date: datetime.date | None = None,
+                                   session: aiohttp.ClientSession | None = None
+                                   ) -> str:
         if date is None:
             url = self.get_url(Endpoints.indiware_mobil2)
         else:
@@ -71,7 +77,10 @@ class Stundenplan24Client:
 
         return await self.fetch_url(url, session)
 
-    async def fetch_substitution_plan(self, session: aiohttp.ClientSession, date: datetime.date | None = None) -> str:
+    async def fetch_substitution_plan(self,
+                                      date: datetime.date | None = None,
+                                      session: aiohttp.ClientSession | None = None
+                                      ) -> str:
         if date is None:
             url = self.get_url(Endpoints.substitution_plan).format(date="")
         else:

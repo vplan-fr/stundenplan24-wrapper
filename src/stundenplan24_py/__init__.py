@@ -4,6 +4,11 @@ from .client import (
     Endpoints
 )
 
+from .crawler import (
+    Crawler,
+    Result
+)
+
 from . import (
     indiware_mobil,
     substitution_plan,
