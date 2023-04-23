@@ -7,21 +7,38 @@ import os
 import typing
 from pathlib import Path
 
+__all__ = [
+    "Result",
+    "Crawler",
+    "Crawler"
+]
+
+T = typing.TypeVar("T")
+T_Interpreted = typing.TypeVar("T_Interpreted", str, typing.Any)
+
 
 @dataclasses.dataclass
-class Result:
-    data: str
+class Result(typing.Generic[T]):
+    data: T
     timestamp: datetime.datetime
     from_cache: bool = False
 
+    def interpret(self, interpreter: typing.Callable[[T], T_Interpreted]) -> Result[T_Interpreted]:
+        return Result(
+            data=interpreter(self.data),
+            timestamp=self.timestamp,
+            from_cache=self.from_cache
+        )
 
-class Crawler:
+
+class Crawler(typing.Generic[T_Interpreted]):
     def __init__(self,
                  folder: Path,
-                 getter_coro: typing.Callable[[datetime.date], typing.Awaitable[Result]],
+                 getter_coro: typing.Callable[[datetime.date], typing.Awaitable[Result[str]]],
                  crawl_interval: float = 60 * 30,
                  look_back: int = 10,
-                 look_forward: int = 10):
+                 look_forward: int = 10,
+                 interpreter: typing.Callable[[str], T_Interpreted] = lambda x: x):
         self.folder = folder
         self.getter_coro = getter_coro
 
@@ -29,8 +46,10 @@ class Crawler:
         self.look_back = look_back
         self.look_forward = look_forward
 
+        self.interpreter = interpreter
+
     @staticmethod
-    def _iterate_revisions(folder: Path) -> typing.Iterator[Result]:
+    def _iterate_revisions(folder: Path) -> typing.Iterator[Result[str]]:
         revisions = os.listdir(folder)
 
         for revision in sorted(revisions, key=int, reverse=True):
@@ -41,7 +60,7 @@ class Crawler:
                     from_cache=True
                 )
 
-    def store_result(self, date: datetime.date, result: Result | None):
+    def store_result(self, date: datetime.date, result: Result[str] | None):
         parent_folder = self.folder / date.strftime("%Y-%m-%d")
         parent_folder.mkdir(parents=True, exist_ok=True)
 
@@ -52,7 +71,7 @@ class Crawler:
         with open(file_path, "w", encoding="utf-8") as f:
             f.write(result.data)
 
-    async def fetch(self, date: datetime.date) -> Result:
+    async def fetch(self, date: datetime.date) -> Result[str]:
         try:
             result = await self.getter_coro(date)
         except RuntimeError:
@@ -61,7 +80,7 @@ class Crawler:
             self.store_result(date, result)
             return result
 
-    async def get(self, date: datetime.date) -> typing.AsyncIterator[Result]:
+    async def get_raw(self, date: datetime.date) -> typing.AsyncIterator[Result[str]]:
         date_str = date.strftime("%Y-%m-%d")
 
         if (self.folder / date_str).exists():
@@ -69,6 +88,10 @@ class Crawler:
                 yield revision
         else:
             yield await self.fetch(date)
+
+    async def get(self, date: datetime.date) -> typing.AsyncIterator[Result[T_Interpreted]]:
+        async for revision in self.get_raw(date):
+            yield revision.interpret(self.interpreter)
 
     async def crawl(self):
         while True:
@@ -85,6 +108,10 @@ class Crawler:
 
             day += datetime.timedelta(days=1)
 
-    def all(self) -> typing.Iterator[Result]:
+    def all_raw(self) -> typing.Iterator[Result[str]]:
         for date in os.listdir(self.folder):
             yield from self._iterate_revisions(self.folder / date)
+
+    def all(self) -> typing.Iterator[Result[T_Interpreted]]:
+        for revision in self.all_raw():
+            yield revision.interpret(self.interpreter)

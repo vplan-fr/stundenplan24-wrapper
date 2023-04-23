@@ -1,17 +1,10 @@
-from .client import (
-    Stundenplan24Client,
-    Stundenplan24Credentials,
-    Endpoints
-)
-
-from .crawler import (
-    Crawler,
-    Result
-)
+from .client import *
+from .crawler import *
 
 from . import (
     indiware_mobil,
     substitution_plan,
+    util
 )
 
 

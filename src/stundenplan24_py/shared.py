@@ -4,6 +4,10 @@ import dataclasses
 import datetime
 import xml.etree.ElementTree as ET
 
+__all__ = [
+    "Value"
+]
+
 
 def parse_free_days(xml: ET.Element) -> list[datetime.date]:
     free_days = []

@@ -5,6 +5,8 @@ import xml.etree.ElementTree as ET
 
 from stundenplan24_py.shared import Value, parse_free_days
 
+__all__ = ["SubstitutionPlan", "Action", "Exam"]
+
 
 def split_text_if_exists(xml: ET.Element, tag: str) -> list[str]:
     try:

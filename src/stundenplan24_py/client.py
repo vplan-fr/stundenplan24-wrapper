@@ -6,6 +6,12 @@ import urllib.parse
 
 import aiohttp as aiohttp
 
+__all__ = [
+    "Stundenplan24Credentials",
+    "Endpoints",
+    "Stundenplan24Client"
+]
+
 
 @dataclasses.dataclass
 class Stundenplan24Credentials:

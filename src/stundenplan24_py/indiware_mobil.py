@@ -6,6 +6,13 @@ import xml.etree.ElementTree as ET
 
 from stundenplan24_py.shared import parse_free_days, Value
 
+__all__ = [
+    "FormPlan",
+    "Form",
+    "Lesson",
+    "Class"
+]
+
 
 class FormPlan:
     plan_type: str
