@@ -4,7 +4,6 @@ from .crawler import *
 from . import (
     indiware_mobil,
     substitution_plan,
-    util
 )
 
 

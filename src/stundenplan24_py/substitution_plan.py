@@ -16,7 +16,7 @@ def split_text_if_exists(xml: ET.Element, tag: str) -> list[str]:
 
 
 class SubstitutionPlan:
-    file_name: str
+    filename: str
     title: str
     school_name: str
     timestamp: datetime.datetime  # time of last update
@@ -39,7 +39,7 @@ class SubstitutionPlan:
         plan = cls()
 
         head = xml.find("kopf")
-        plan.file_name = head.find("datei").text
+        plan.filename = head.find("datei").text
         plan.title = head.find("titel").text
         plan.school_name = head.find("schulname").text
         plan.timestamp = datetime.datetime.strptime(head.find("datum").text, "%d.%m.%Y, %H:%M")

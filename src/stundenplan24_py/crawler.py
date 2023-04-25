@@ -5,13 +5,16 @@ import dataclasses
 import datetime
 import os
 import typing
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 __all__ = [
     "Result",
-    "Crawler",
-    "Crawler"
+    "IndiwareMobilCrawler",
 ]
+
+from .client import Stundenplan24Client
+from .indiware_mobil import FormPlan
 
 T = typing.TypeVar("T")
 T_Interpreted = typing.TypeVar("T_Interpreted", str, typing.Any)
@@ -21,32 +24,26 @@ T_Interpreted = typing.TypeVar("T_Interpreted", str, typing.Any)
 class Result(typing.Generic[T]):
     data: T
     timestamp: datetime.datetime
-    from_cache: bool = False
 
     def interpret(self, interpreter: typing.Callable[[T], T_Interpreted]) -> Result[T_Interpreted]:
         return Result(
             data=interpreter(self.data),
             timestamp=self.timestamp,
-            from_cache=self.from_cache
         )
 
 
-class Crawler(typing.Generic[T_Interpreted]):
+class NotInCacheError(Exception):
+    pass
+
+
+class IndiwareMobilCrawler:
+    _interpreter = staticmethod(lambda data: FormPlan.from_xml(ET.fromstring(data)))
+
     def __init__(self,
-                 folder: Path,
-                 getter_coro: typing.Callable[[datetime.date], typing.Awaitable[Result[str]]],
-                 crawl_interval: float = 60 * 30,
-                 look_back: int = 10,
-                 look_forward: int = 10,
-                 interpreter: typing.Callable[[str], T_Interpreted] = lambda x: x):
+                 client: Stundenplan24Client,
+                 folder: Path):
+        self.client = client
         self.folder = folder
-        self.getter_coro = getter_coro
-
-        self.crawl_interval = crawl_interval
-        self.look_back = look_back
-        self.look_forward = look_forward
-
-        self.interpreter = interpreter
 
     @staticmethod
     def _iterate_revisions(folder: Path) -> typing.Iterator[Result[str]]:
@@ -57,7 +54,6 @@ class Crawler(typing.Generic[T_Interpreted]):
                 yield Result(
                     data=f.read(),
                     timestamp=datetime.datetime.fromtimestamp(int(revision)),
-                    from_cache=True
                 )
 
     def store_result(self, date: datetime.date, result: Result[str] | None):
@@ -71,10 +67,23 @@ class Crawler(typing.Generic[T_Interpreted]):
         with open(file_path, "w", encoding="utf-8") as f:
             f.write(result.data)
 
-    async def fetch(self, date: datetime.date) -> Result[str]:
+    def get_latest_timestamp(self, date: datetime.date) -> datetime.datetime | None:
+        parent_folder = self.folder / date.strftime("%Y-%m-%d")
         try:
-            result = await self.getter_coro(date)
+            revisions = sorted(os.listdir(parent_folder), key=int, reverse=True)
+        except FileNotFoundError:
+            return None
+
+        return datetime.datetime.fromtimestamp(int(revisions[0]))
+
+    async def fetch(self, date: datetime.date, timestamp: datetime.datetime) -> Result[str]:
+        """Return the plan file for the given date and store it in the cache using the given timestamp."""
+
+        try:
+            data = await self.client.fetch_indiware_mobil(date)
+            result = Result(data=data, timestamp=timestamp)
         except RuntimeError:
+            # no plan available for this day
             self.store_result(date, None)
         else:
             self.store_result(date, result)
@@ -87,31 +96,38 @@ class Crawler(typing.Generic[T_Interpreted]):
             for revision in self._iterate_revisions(self.folder / date_str):
                 yield revision
         else:
-            yield await self.fetch(date)
+            raise NotInCacheError(f"Date {date_str!r} was not crawled.")
 
-    async def get(self, date: datetime.date) -> typing.AsyncIterator[Result[T_Interpreted]]:
+    async def get(self, date: datetime.date) -> typing.AsyncIterator[Result[FormPlan]]:
         async for revision in self.get_raw(date):
-            yield revision.interpret(self.interpreter)
-
-    async def crawl(self):
-        while True:
-            await self.update_days()
-
-            await asyncio.sleep(self.crawl_interval)
-
-    async def update_days(self):
-        day = datetime.date.today() - datetime.timedelta(days=self.look_back)
-        end_day = datetime.date.today() + datetime.timedelta(days=self.look_forward)
-
-        while day <= end_day:
-            await self.fetch(day)
-
-            day += datetime.timedelta(days=1)
+            yield revision.interpret(self._interpreter)
 
     def all_raw(self) -> typing.Iterator[Result[str]]:
         for date in os.listdir(self.folder):
             yield from self._iterate_revisions(self.folder / date)
 
-    def all(self) -> typing.Iterator[Result[T_Interpreted]]:
+    def all(self) -> typing.Iterator[Result[FormPlan]]:
         for revision in self.all_raw():
-            yield revision.interpret(self.interpreter)
+            yield revision.interpret(self._interpreter)
+
+    async def crawl(self, interval: float = 60):
+        while True:
+            await self.update_days()
+
+            await asyncio.sleep(interval)
+
+    async def update_days(self):
+        day_filenames = await self.client.fetch_dates_indiware_mobil()
+
+        for day, latest_timestamp in day_filenames.items():
+            if day == "Klassen.xml":
+                # this is always the latest available plan, it also exists as a file with a date
+                continue
+
+            date = datetime.datetime.strptime(day, "PlanKl%Y%m%d.xml").date()
+
+            latest_cached = self.get_latest_timestamp(date)
+            if latest_cached is not None and latest_timestamp <= latest_cached:
+                continue
+
+            await self.fetch(date, latest_timestamp)

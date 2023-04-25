@@ -21,11 +21,11 @@ class Stundenplan24Credentials:
 
 class Endpoints:
     # indiware mobil
-    indiware_mobil_vpdir = "{school_number}/mobil/_phpmob/vpdir.php"
+    indiware_mobil_vpdir = "{school_number}/mobil/_phpmob/vpdir.php"  # POST
     indiware_mobil_vpinfok = "{school_number}/mobil/mobdaten/vpinfok.txt"
 
     # indiware mobil students
-    indiware_mobil = "{school_number}/mobil/mobdaten/PlanKl{date}.xml"  # date must not be "", use below
+    indiware_mobil = "{school_number}/mobil/mobdaten/{filename}"  # date must not be "", use below
     indiware_mobil2 = "{school_number}/mobil/mobdaten/Klassen.xml"
 
     # indiware mobil teachers
@@ -63,29 +63,68 @@ class Stundenplan24Client:
 
         return urllib.parse.urljoin(self.base_url, this_endpoint)
 
-    async def fetch_url(self, url: str, session: aiohttp.ClientSession | None) -> str:
+    async def fetch_url(self, url: str, session: aiohttp.ClientSession | None, method: str = "GET", **kwargs) -> str:
         if session is None:
             async with aiohttp.ClientSession() as session:
-                return await self.fetch_url(url, session)
+                return await self.fetch_url(url, session, method, **kwargs)
 
         auth = aiohttp.BasicAuth(self.credentials.user_name, self.credentials.password)
 
-        async with session.get(url, auth=auth) as response:
+        async with session.request(method, url, auth=auth, **kwargs) as response:
             if response.status != 200:
                 raise RuntimeError(f"Got status code {response.status} from {url!r}.")
 
             return await response.text()
 
     async def fetch_indiware_mobil(self,
-                                   date: datetime.date | None = None,
+                                   date_or_filename: str | datetime.date | None = None,
                                    session: aiohttp.ClientSession | None = None
                                    ) -> str:
-        if date is None:
+        if date_or_filename is None:
             url = self.get_url(Endpoints.indiware_mobil2)
-        else:
-            url = self.get_url(Endpoints.indiware_mobil).format(date=date.strftime("%Y%m%d"))
 
+        elif isinstance(date_or_filename, str):
+            url = self.get_url(Endpoints.indiware_mobil).format(filename=date_or_filename)
+
+        elif isinstance(date_or_filename, datetime.date):
+            url = self.get_url(Endpoints.indiware_mobil).format(
+                filename=f"PlanKl{date_or_filename.strftime('%Y%m%d')}.xml"
+            )
+
+        else:
+            raise TypeError(f"date_or_filename must be str, datetime.date or None, not {type(date_or_filename)}")
+        
         return await self.fetch_url(url, session)
+
+    async def fetch_dates_indiware_mobil(self,
+                                         session: aiohttp.ClientSession | None = None
+                                         ) -> dict[str, datetime.datetime]:
+        url = self.get_url(Endpoints.indiware_mobil_vpdir)
+
+        with aiohttp.MultipartWriter("form-data") as mpwriter:
+            # noinspection PyTypeChecker
+            mpwriter.append(
+                "I N D I W A R E",
+                {"Content-Disposition": 'form-data; name="pw"'}
+            )
+            # noinspection PyTypeChecker
+            mpwriter.append(
+                "mobk",
+                {"Content-Disposition": 'form-data; name="art"'}
+            )
+
+        _out = (await self.fetch_url(url, session, method="POST", data=mpwriter)).split(";")
+
+        out: dict[str, datetime.datetime] = {}
+        for i in range(0, len(_out), 2):
+            if not _out[i]:
+                continue
+
+            filename, date_str = _out[i:i + 2]
+
+            out[filename] = datetime.datetime.strptime(date_str, "%d.%m.%Y %H:%M")
+
+        return out
 
     async def fetch_substitution_plan(self,
                                       date: datetime.date | None = None,

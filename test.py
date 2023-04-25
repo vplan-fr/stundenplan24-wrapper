@@ -11,14 +11,13 @@ async def main():
 
     client = Stundenplan24Client(school_nr, creds)
 
-    crawler = util.create_indiware_mobil_crawler(client, Path("cache"))
+    crawler = IndiwareMobilCrawler(client, Path("cache"))
 
     await crawler.update_days()
 
     async for revision in crawler.get(datetime.date.today()):
         print(revision.data)
         print(revision.timestamp)
-        print(revision.from_cache)
 
 
 if __name__ == '__main__':

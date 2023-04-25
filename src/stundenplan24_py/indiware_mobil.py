@@ -18,7 +18,7 @@ class FormPlan:
     plan_type: str
     timestamp: datetime.datetime  # time of last update
     plan_date: str
-    file_name: str
+    filename: str
     native: str
     week: int
     days_per_week: int
@@ -42,7 +42,7 @@ class FormPlan:
 
         day.timestamp = datetime.datetime.strptime(head.find("zeitstempel").text, "%d.%m.%Y, %H:%M")
         day.plan_date = head.find("DatumPlan").text
-        day.file_name = head.find("datei").text
+        day.filename = head.find("datei").text
         day.native = int(head.find("nativ").text)
         day.week = int(head.find("woche").text)
         day.days_per_week = int(head.find("tageprowoche").text)
