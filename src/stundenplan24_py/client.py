@@ -20,6 +20,10 @@ class Stundenplan24Credentials:
 
 
 class Endpoints:
+    # indiware mobil
+    indiware_mobil_vpdir = "{school_number}/mobil/_phpmob/vpdir.php"
+    indiware_mobil_vpinfok = "{school_number}/mobil/mobdaten/vpinfok.txt"
+
     # indiware mobil students
     indiware_mobil = "{school_number}/mobil/mobdaten/PlanKl{date}.xml"  # date must not be "", use below
     indiware_mobil2 = "{school_number}/mobil/mobdaten/Klassen.xml"
