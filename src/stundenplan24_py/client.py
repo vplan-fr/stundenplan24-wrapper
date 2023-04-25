@@ -47,6 +47,10 @@ class Endpoints:
     timetable = "{school_number}/splan/sdaten/splank.xml"
 
 
+class NoPlanForDateError(Exception):
+    pass
+
+
 class Stundenplan24Client:
     def __init__(self,
                  school_number: int,
@@ -72,7 +76,7 @@ class Stundenplan24Client:
 
         async with session.request(method, url, auth=auth, **kwargs) as response:
             if response.status != 200:
-                raise RuntimeError(f"Got status code {response.status} from {url!r}.")
+                raise RuntimeError(f"Got status code {response.status} from {url!r}.", response.status)
 
             return await response.text()
 
@@ -93,8 +97,13 @@ class Stundenplan24Client:
 
         else:
             raise TypeError(f"date_or_filename must be str, datetime.date or None, not {type(date_or_filename)}")
-        
-        return await self.fetch_url(url, session)
+
+        try:
+            return await self.fetch_url(url, session)
+        except RuntimeError as e:
+            if e.args[1] == 404:
+                raise NoPlanForDateError(f"No plan for {date_or_filename!r} found.") from e
+            raise
 
     async def fetch_dates_indiware_mobil(self,
                                          session: aiohttp.ClientSession | None = None
