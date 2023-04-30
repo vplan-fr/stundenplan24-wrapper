@@ -23,6 +23,7 @@ class SubstitutionPlan:
 
     absent_teachers: list[str]
     absent_forms: list[str]
+    absent_rooms: list[str]
     changed_teachers: list[str]
     changed_forms: list[str]
 
@@ -48,6 +49,7 @@ class SubstitutionPlan:
         # TODO: absent teachers sometimes have the absent periods in parens like this: Bob (3-7)
         plan.absent_teachers = split_text_if_exists(head_info, "abwesendl")
         plan.absent_forms = split_text_if_exists(head_info, "abwesendk")
+        plan.absent_rooms = split_text_if_exists(head_info, "abwesendr")
         plan.changed_teachers = split_text_if_exists(head_info, "aenderungl")
         plan.changed_forms = split_text_if_exists(head_info, "aenderungk")
 
