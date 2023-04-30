@@ -15,13 +15,13 @@ __all__ = [
 
 @dataclasses.dataclass
 class Stundenplan24Credentials:
-    user_name: str
+    username: str
     password: str
 
 
 class Endpoints:
     # indiware mobil
-    indiware_mobil_vpdir = "{school_number}/mobil/_phpmob/vpdir.php"  # POST
+    indiware_mobil_vpdir = "{school_number}/mobil/_phpmob/vpdir.php"  # POST with data
     indiware_mobil_vpinfok = "{school_number}/mobil/mobdaten/vpinfok.txt"
 
     # indiware mobil students
@@ -72,7 +72,7 @@ class Stundenplan24Client:
             async with aiohttp.ClientSession() as session:
                 return await self.fetch_url(url, session, method, **kwargs)
 
-        auth = aiohttp.BasicAuth(self.credentials.user_name, self.credentials.password)
+        auth = aiohttp.BasicAuth(self.credentials.username, self.credentials.password)
 
         async with session.request(method, url, auth=auth, **kwargs) as response:
             if response.status != 200:

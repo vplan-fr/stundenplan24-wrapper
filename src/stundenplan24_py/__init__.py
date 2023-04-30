@@ -14,7 +14,7 @@ def parse_creds_json(json_str: str) -> tuple[int, Stundenplan24Credentials]:
 
     school_number = int(out["school_number"])
     credentials = Stundenplan24Credentials(
-        out["user_name"],
+        out["username"],
         out["password"]
     )
 

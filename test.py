@@ -15,7 +15,7 @@ async def main():
 
     await crawler.update_days()
 
-    async for revision in crawler.get(datetime.date.today()):
+    for revision in crawler.get(datetime.date.today()):
         print(revision.data)
         print(revision.timestamp)
 

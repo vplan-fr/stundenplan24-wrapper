@@ -89,7 +89,7 @@ class IndiwareMobilCrawler:
             self.store_result(date, result)
             return result
 
-    async def get_raw(self, date: datetime.date) -> typing.AsyncIterator[Result[str]]:
+    def get_raw(self, date: datetime.date) -> typing.Iterator[Result[str]]:
         date_str = date.strftime("%Y-%m-%d")
 
         if (self.folder / date_str).exists():
@@ -98,8 +98,8 @@ class IndiwareMobilCrawler:
         else:
             raise NotInCacheError(f"Date {date_str!r} was not crawled.")
 
-    async def get(self, date: datetime.date) -> typing.AsyncIterator[Result[FormPlan]]:
-        async for revision in self.get_raw(date):
+    def get(self, date: datetime.date) -> typing.Iterator[Result[FormPlan]]:
+        for revision in self.get_raw(date):
             yield revision.interpret(self._interpreter)
 
     def all_raw(self) -> typing.Iterator[Result[str]]:
