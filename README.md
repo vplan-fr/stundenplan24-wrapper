@@ -43,7 +43,7 @@ stundenplan24.de stores the files for about two weeks.
 | Kurs               | course, e.g. `7WInf1` |
 | Schulklasse        | form, e.g. `6c`       |
 | Jahrgang           | year, e.g. 11         |
-| Unterricht         | classes               |
+| Unterricht         | class(es)             |
 | Schulstunde (Zeit) | period                |
 | Unterrichtsstunde  | lesson                |
 | Klausur            | exam                  |

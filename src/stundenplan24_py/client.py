@@ -78,7 +78,7 @@ class Stundenplan24Client:
             if response.status != 200:
                 raise RuntimeError(f"Got status code {response.status} from {url!r}.", response.status)
 
-            return await response.text()
+            return await response.text(encoding="utf-8")
 
     async def fetch_indiware_mobil(self,
                                    date_or_filename: str | datetime.date | None = None,
