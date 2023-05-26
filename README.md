@@ -33,7 +33,7 @@ They can be accessed at [www.stundenplan24.de](https://www.stundenplan24.de/).
 
 There are at least twelve API endpoints. These are stored in [`studenplan24_py.Endpoints`](src/stundenplan24_py/client.py).
 
-stundenplan24.de stores the files for about two weeks.
+stundenplan24.de deletes any plan files older than ten days automatically.
 
 ## Translations from German
 
