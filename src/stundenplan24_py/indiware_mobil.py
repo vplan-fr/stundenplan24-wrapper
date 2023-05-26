@@ -75,7 +75,7 @@ class Form:
 
     periods: dict[int, tuple[datetime.time, datetime.time]]
     courses: dict[str, str]  # course name: teacher
-    classes: dict[int, Class]
+    classes: dict[str, Class]
     lessons: list[Lesson]
 
     @classmethod
@@ -111,7 +111,7 @@ class Form:
                 subject=class_.attrib["UeFa"],
                 group=class_.attrib["UeGr"] if "UeGr" in class_.attrib else None
             )
-            form.classes |= {int(class_.text): class_obj}
+            form.classes |= {class_.text: class_obj}
 
         # parse lessons
         form.lessons = []
@@ -137,7 +137,7 @@ class Lesson:
     teacher: Value
     room: Value
 
-    number: str | None
+    class_number: str | None
     information: str
 
     @classmethod
@@ -155,9 +155,9 @@ class Lesson:
         lesson.room = Value(xml.find("Ra").text, xml.find("Ra").get("RaAe") == "RaGeaendert")
 
         try:
-            lesson.number = xml.find("Nr").text
+            lesson.class_number = xml.find("Nr").text
         except AttributeError:
-            lesson.number = None
+            lesson.class_number = None
         lesson.information = xml.find("If").text
 
         return lesson
