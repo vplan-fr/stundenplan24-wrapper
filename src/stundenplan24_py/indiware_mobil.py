@@ -137,7 +137,7 @@ class Lesson:
     teacher: Value
     room: Value
 
-    number: int | None
+    number: str | None
     information: str
 
     @classmethod
@@ -155,7 +155,7 @@ class Lesson:
         lesson.room = Value(xml.find("Ra").text, xml.find("Ra").get("RaAe") == "RaGeaendert")
 
         try:
-            lesson.number = int(xml.find("Nr").text)
+            lesson.number = xml.find("Nr").text
         except AttributeError:
             lesson.number = None
         lesson.information = xml.find("If").text
