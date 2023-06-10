@@ -91,7 +91,7 @@ class Form:
         # parse periods
         form.periods = {}
         for period in xml.find("KlStunden"):
-            start, end = period.attrib["ZeitVon"], period.attrib["ZeitBis"]
+            start, end = period.attrib["ZeitVon"].strip(), period.attrib["ZeitBis"].strip()
             start = datetime.datetime.strptime(start, "%H:%M").time()
             end = datetime.datetime.strptime(end, "%H:%M").time()
             form.periods |= {int(period.text): (start, end)}
