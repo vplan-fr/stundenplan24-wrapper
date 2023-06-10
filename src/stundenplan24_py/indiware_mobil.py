@@ -158,6 +158,7 @@ class Lesson:
             lesson.class_number = xml.find("Nr").text
         except AttributeError:
             lesson.class_number = None
-        lesson.information = xml.find("If").text.strip()
+        lesson.information = (xml.find("If").text.strip()
+                              if xml.find("If").text is not None else None)
 
         return lesson
