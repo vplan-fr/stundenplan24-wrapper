@@ -5,7 +5,8 @@ import datetime
 import xml.etree.ElementTree as ET
 
 __all__ = [
-    "Value"
+    "Value",
+    "Exam"
 ]
 
 
