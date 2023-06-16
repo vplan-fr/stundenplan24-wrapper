@@ -14,10 +14,38 @@ __all__ = [
 ]
 
 
+def parse_plan_date(date: str) -> datetime.date:
+    """
+    Example: Freitag, 23. Juni 2023
+    """
+
+    months = {
+        "Januar": 1,
+        "Februar": 2,
+        "März": 3,
+        "April": 4,
+        "Mai": 5,
+        "Juni": 6,
+        "Juli": 7,
+        "August": 8,
+        "September": 9,
+        "Oktober": 10,
+        "November": 11,
+        "Dezember": 12
+    }
+
+    _, date = date.split(", ", 1)
+
+    day, month_and_year = date.split(". ", 1)
+    month, year = month_and_year.split(" ", 1)
+
+    return datetime.date(int(year), months[month], int(day))
+
+
 class FormPlan:
     plan_type: str
     timestamp: datetime.datetime  # time of last update
-    plan_date: str
+    date: datetime.date
     filename: str
     native: str
     week: int
@@ -41,7 +69,7 @@ class FormPlan:
         )
 
         day.timestamp = datetime.datetime.strptime(head.find("zeitstempel").text, "%d.%m.%Y, %H:%M")
-        day.plan_date = head.find("DatumPlan").text
+        day.date = parse_plan_date(head.find("DatumPlan").text)
         day.filename = head.find("datei").text
         day.native = int(head.find("nativ").text)
         day.week = int(head.find("woche").text)
