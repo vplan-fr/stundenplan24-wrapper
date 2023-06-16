@@ -9,7 +9,8 @@ import aiohttp as aiohttp
 __all__ = [
     "Stundenplan24Credentials",
     "Endpoints",
-    "Stundenplan24Client"
+    "Stundenplan24Client",
+    "NoPlanForDateError"
 ]
 
 
@@ -25,18 +26,22 @@ class Endpoints:
     indiware_mobil_vpinfok = "{school_number}/mobil/mobdaten/vpinfok.txt"
 
     # indiware mobil students
-    indiware_mobil = "{school_number}/mobil/mobdaten/{filename}"  # date must not be "", use below
-    indiware_mobil2 = "{school_number}/mobil/mobdaten/Klassen.xml"
+    indiware_mobil = "{school_number}/mobil/mobdaten/{filename}"
+    indiware_mobil2 = "{school_number}/mobil/mobdaten/PlanKl{date}.xml"  # date must not be "", use below
+    indiware_mobil3 = "{school_number}/mobil/mobdaten/Klassen.xml"
 
     # indiware mobil teachers
-    indiware_mobil_teachers = "{school_number}/moble/mobdaten/PlanLe{date}.xml"  # date must not be "", use below
-    indiware_mobil_teachers2 = "{school_number}/moble/mobdaten/Lehrer.xml"
+    indiware_mobil_teachers = "{school_number}/moble/mobdaten/{filename}"
+    indiware_mobil_teachers2 = "{school_number}/moble/mobdaten/PlanLe{date}.xml"  # date must not be "", use below
+    indiware_mobil_teachers3 = "{school_number}/moble/mobdaten/Lehrer.xml"
 
     # substitution plan students
-    substitution_plan = "{school_number}/vplan/vdaten/VplanKl{date}.xml"
+    substitution_plan = "{school_number}/vplan/vdaten/{filename}.xml"
+    substitution_plan2 = "{school_number}/vplan/vdaten/VplanKl{date}.xml"  # date can be ""
 
     # substitution plan teachers
-    substitution_plan_teachers = "{school_number}/vplanle/vdaten/VplanLe{date}.xml"
+    substitution_plan_teachers = "{school_number}/vplanle/vdaten/{filename}.xml"
+    substitution_plan_teachers2 = "{school_number}/vplanle/vdaten/VplanLe{date}.xml"  # date can be ""
 
     # week plan
     week_plan_timetable_base = "{school_number}/wplan/wdatenk/SPlanKl_Basis.xml"
@@ -85,15 +90,11 @@ class Stundenplan24Client:
                                    session: aiohttp.ClientSession | None = None
                                    ) -> str:
         if date_or_filename is None:
-            url = self.get_url(Endpoints.indiware_mobil2)
-
+            url = self.get_url(Endpoints.indiware_mobil3)
         elif isinstance(date_or_filename, str):
             url = self.get_url(Endpoints.indiware_mobil).format(filename=date_or_filename)
-
         elif isinstance(date_or_filename, datetime.date):
-            url = self.get_url(Endpoints.indiware_mobil).format(
-                filename=f"PlanKl{date_or_filename.strftime('%Y%m%d')}.xml"
-            )
+            url = self.get_url(Endpoints.indiware_mobil2).format(date=date_or_filename.strftime('%Y%m%d'))
 
         else:
             raise TypeError(f"date_or_filename must be str, datetime.date or None, not {type(date_or_filename)}")
@@ -103,7 +104,8 @@ class Stundenplan24Client:
         except RuntimeError as e:
             if e.args[1] == 404:
                 raise NoPlanForDateError(f"No plan for {date_or_filename!r} found.") from e
-            raise
+            else:
+                raise
 
     async def fetch_dates_indiware_mobil(self,
                                          session: aiohttp.ClientSession | None = None
@@ -136,12 +138,20 @@ class Stundenplan24Client:
         return out
 
     async def fetch_substitution_plan(self,
-                                      date: datetime.date | None = None,
+                                      date_or_filename: datetime.date | str | None = None,
                                       session: aiohttp.ClientSession | None = None
                                       ) -> str:
-        if date is None:
-            url = self.get_url(Endpoints.substitution_plan).format(date="")
+        if date_or_filename is None:
+            url = self.get_url(Endpoints.substitution_plan2).format(date="")
+        elif isinstance(date_or_filename, str):
+            url = self.get_url(Endpoints.substitution_plan).format(filename=date_or_filename)
         else:
-            url = self.get_url(Endpoints.substitution_plan).format(date=date.strftime("%Y%m%d"))
+            url = self.get_url(Endpoints.substitution_plan2).format(date=date_or_filename.strftime("%Y%m%d"))
 
-        return await self.fetch_url(url, session)
+        try:
+            return await self.fetch_url(url, session)
+        except RuntimeError as e:
+            if e.args[1] == 404:
+                raise NoPlanForDateError(f"No plan for {date_or_filename!r} found.") from e
+            else:
+                raise
