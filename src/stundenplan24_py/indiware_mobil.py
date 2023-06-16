@@ -4,7 +4,7 @@ import dataclasses
 import datetime
 import xml.etree.ElementTree as ET
 
-from stundenplan24_py.shared import parse_free_days, Value
+from stundenplan24_py.shared import parse_free_days, Value, Exam
 
 __all__ = [
     "FormPlan",
@@ -77,6 +77,7 @@ class Form:
     courses: dict[str, str]  # course name: teacher
     classes: dict[str, Class]
     lessons: list[Lesson]
+    exams: list[Exam]
 
     @classmethod
     def from_xml(cls, xml: ET.Element):
@@ -117,6 +118,13 @@ class Form:
         form.lessons = []
         for _lesson in xml.find("Pl"):
             form.lessons.append(Lesson.from_xml(_lesson))
+
+        # parse exams
+        form.exams = []
+        _exams = xml.find("Klausuren")
+        if _exams is not None:
+            for _exam in _exams:
+                form.exams.append(Exam.from_xml_indiware_mobile(_exam))
 
         return form
 

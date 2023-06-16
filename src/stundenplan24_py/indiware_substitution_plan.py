@@ -3,9 +3,9 @@ from __future__ import annotations
 import datetime
 import xml.etree.ElementTree as ET
 
-from stundenplan24_py.shared import Value, parse_free_days
+from stundenplan24_py.shared import Value, parse_free_days, Exam
 
-__all__ = ["SubstitutionPlan", "Action", "Exam"]
+__all__ = ["SubstitutionPlan", "Action"]
 
 
 def split_text_if_exists(xml: ET.Element, tag: str) -> list[str]:
@@ -61,7 +61,7 @@ class SubstitutionPlan:
 
         plan.exams = []
         for exam in xml.find("klausuren"):
-            plan.exams.append(Exam.from_xml(exam))
+            plan.exams.append(Exam.from_xml_substitution_plan(exam))
 
         footer = xml.find("fuss")
         plan.additional_info = []
@@ -91,27 +91,3 @@ class Action:
         action.info = xml.find("info").text
 
         return action
-
-
-class Exam:
-    year: int
-    course: str
-    course_teacher: str
-    period: int
-    begin: datetime.time
-    duration: int  # minutes
-    info: str | None
-
-    @classmethod
-    def from_xml(cls, xml: ET.Element) -> Exam:
-        exam = cls()
-
-        exam.year = int(xml.find("jahrgang").text)
-        exam.course = xml.find("kurs").text
-        exam.course_teacher = xml.find("kursleiter").text
-        exam.period = int(xml.find("stunde").text)
-        exam.begin = datetime.datetime.strptime(xml.find("beginn").text, "%H:%M").time()
-        exam.duration = int(xml.find("dauer").text)
-        exam.info = xml.find("kinfo").text
-
-        return exam

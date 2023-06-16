@@ -3,7 +3,7 @@ from .crawler import *
 
 from . import (
     indiware_mobil,
-    substitution_plan,
+    indiware_substitution_plan,
 )
 
 
