@@ -56,7 +56,7 @@ class SubstitutionPlan:
         plan.free_days = parse_free_days(xml.find("freietage"))
 
         plan.actions = []
-        for action in xml.find("haupt"):
+        for action in xml.find("haupt") or []:
             plan.actions.append(Action.from_xml(action))
 
         plan.exams = []
