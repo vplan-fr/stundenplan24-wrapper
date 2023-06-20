@@ -149,10 +149,8 @@ class Form:
 
         # parse exams
         form.exams = []
-        _exams = xml.find("Klausuren")
-        if _exams is not None:
-            for _exam in _exams:
-                form.exams.append(Exam.from_xml_indiware_mobile(_exam))
+        for _exam in xml.find("Klausuren") or []:
+            form.exams.append(Exam.from_xml_indiware_mobile(_exam))
 
         return form
 

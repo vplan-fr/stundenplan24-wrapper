@@ -60,7 +60,7 @@ class SubstitutionPlan:
             plan.actions.append(Action.from_xml(action))
 
         plan.exams = []
-        for exam in xml.find("klausuren"):
+        for exam in xml.find("klausuren") or []:
             plan.exams.append(Exam.from_xml_substitution_plan(exam))
 
         footer = xml.find("fuss")
