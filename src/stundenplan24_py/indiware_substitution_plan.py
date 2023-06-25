@@ -65,8 +65,10 @@ class SubstitutionPlan:
 
         footer = xml.find("fuss")
         plan.additional_info = []
-        for line in footer.find("fusszeile"):
-            plan.additional_info.append(line.text)
+
+        if footer is not None:
+            for line in footer.find("fusszeile") or []:
+                plan.additional_info.append(line.text)
 
         return plan
 
