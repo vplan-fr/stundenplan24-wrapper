@@ -1,5 +1,10 @@
 {
-  "school_number": 10000000,
-  "username": "",
-  "password": ""
+  "example_school": {
+    "school_number": "10000000",
+    "hosting": {
+      "creds": {},
+      "endpoints": "https://www.stundenplan24.de/10000000/"
+    }
+  }
 }
+

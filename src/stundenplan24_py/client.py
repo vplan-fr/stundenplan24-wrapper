@@ -3,17 +3,23 @@ from __future__ import annotations
 import abc
 import dataclasses
 import datetime
+import urllib.parse
+import typing
 
 import aiohttp as aiohttp
 
 __all__ = [
     "Credentials",
     "Endpoints",
-    "EndpointCollection",
-    "Stundenplan24StudentsEndpointCollection",
-    "Stundenplan24TeachersEndpointCollection",
-    "SelfHostedEndpointCollection",
+    "IndiwareMobilEndpoint",
+    "Stundenplan24FormsIndiwareMobilEndpoint",
+    "Stundenplan24RoomsIndiwareMobilEndpoint",
+    "Stundenplan24TeachersIndiwareMobilEndpoint",
+    "SelfHostedIndiwareMobilEndpoint",
+    "IndiwareMobilEndpoints",
+    "Hosting",
     "NoPlanForDateError",
+    "IndiwareMobilClient",
     "IndiwareStundenplanerClient"
 ]
 
@@ -25,101 +31,216 @@ class Credentials:
 
 
 class Endpoints:
-    # indiware mobil (/mobil/ or /moble/)
+    # indiware mobil
     indiware_mobil_vpdir = "_phpmob/vpdir.php"  # POST with data
-    indiware_mobil_vpinfok = "mobdaten/vpinfok.txt"
+    indiware_mobil_file = "mobdaten/{filename}"
 
-    indiware_mobil = "mobdaten/{filename}"
-    indiware_mobil2 = "mobdaten/PlanKl{date}.xml"  # date must not be "", use below
-    indiware_mobil3 = "mobdaten/Klassen.xml"
+    # /mobil/
+    indiware_mobil_forms = "mobdaten/PlanKl{date}.xml"  # date must not be "", use below
+    indiware_mobil_forms2 = "mobdaten/Klassen.xml"
+    indiware_mobil_forms_vpinfo = "mobdaten/vpinfok.txt"
+
+    # /moble/
+    indiware_mobil_teachers = "mobdaten/PlanLe{date}.xml"  # date must not be "", use below
+    indiware_mobil_teachers2 = "mobdaten/Lehrer.xml"
+    indiware_mobil_teachers_vpinfo = "mobdaten/vpinfol.txt"
+
+    # /mobra/
+    indiware_mobil_rooms = "mobdaten/PlanRa{date}.xml"  # date must not be "", use below
+    indiware_mobil_rooms2 = "mobdaten/Raeume.xml"
+    indiware_mobil_rooms_vpinfo = "mobdaten/vpinfor.txt"
 
     # substitution plan (/vplan/ or /vplanle/)
     substitution_plan = "vdaten/{filename}.xml"
     substitution_plan2 = "vdaten/VplanKl{date}.xml"  # date can be ""
 
     # week plan (/wplan/)
-    week_plan_timetable_base = "wdatenk/SPlanKl_Basis.xml"
-    week_plan_timetable = "wdatenk/SPlanKl_Sw{school_week}.xml"
-    week_plan = "wdatenk/WPlanKl_{date}.xml"  # date must not be ""
+    week_plan_forms_timetable = "wdatenk/SPlanKl_Sw{school_week}.xml"
+    week_plan_forms_timetable2 = "wdatenk/SPlanKl_Basis.xml"
+    week_plan_forms = "wdatenk/WPlanKl_{date}.xml"  # date must not be ""
+
+    week_plan_teachers_timetable = "wdatenr/SPlanLe_Sw{school_week}.xml"
+    week_plan_teachers_timetable2 = "wdatenr/SPlanLe_Basis.xml"
+    week_plan_teachers = "wdatenr/WPlanLe_{date}.xml"  # date must not be ""
+
+    week_plan_rooms_timetable = "wdatenl/SPlanRa_Sw{school_week}.xml"
+    week_plan_rooms_timetable2 = "wdatenl/SPlanRa_Basis.xml"
+    week_plan_rooms = "wdatenl/WPlanRa_{date}.xml"  # date must not be ""
 
     # timetable (/splan/)
-    timetable = "sdaten/splank.xml"
+    timetable_forms = "sdaten/splank.xml"
+    timetable_teachers = "sdaten/splanl.xml"
+    timetable_rooms = "sdaten/splanr.xml"
 
 
-class EndpointCollection(abc.ABC):
-    indiware_mobil: str | None
-    substitution_plan: str | None
-    week_plan: str | None
-    timetable: str | None
+class IndiwareMobilEndpoint(abc.ABC):
+    url: str
+    vpdir_password: str  # usually mob[k|l|r]
+
+    plan_file_url: str
+    plan_file_url2: str
+    vpinfo_url: str
 
 
-class Stundenplan24StudentsEndpointCollection(EndpointCollection):
-    def __init__(self, school_number: str, sp24_url: str = "https://www.stundenplan24.de/"):
-        self.indiware_mobil = f"{sp24_url}{school_number}/mobil/"
-        self.substitution_plan = f"{sp24_url}{school_number}/vplan/"
-        self.week_plan = f"{sp24_url}{school_number}/wplan/"
-        self.timetable = f"{sp24_url}{school_number}/splan/"
+class FormsIndiwareMobilEndpoint(IndiwareMobilEndpoint):
+    vpdir_password = "mobk"
+    plan_file_url = Endpoints.indiware_mobil_forms
+    plan_file_url2 = Endpoints.indiware_mobil_forms2
+    vpinfo_url = Endpoints.indiware_mobil_forms_vpinfo
 
 
-class Stundenplan24TeachersEndpointCollection(EndpointCollection):
-    def __init__(self, school_number: str, sp24_url: str = "https://www.stundenplan24.de/"):
-        self.indiware_mobil = f"{sp24_url}{school_number}/moble/"
-        self.substitution_plan = f"{sp24_url}{school_number}/vplanle/"
-        self.week_plan = f"{sp24_url}{school_number}/wplan/"
-        self.timetable = f"{sp24_url}{school_number}/splan/"
+class TeachersIndiwareMobilEndpoint(IndiwareMobilEndpoint):
+    vpdir_password = "mobl"
+    plan_file_url = Endpoints.indiware_mobil_teachers
+    plan_file_url2 = Endpoints.indiware_mobil_teachers2
+    vpinfo_url = Endpoints.indiware_mobil_teachers_vpinfo
+
+
+class RoomsIndiwareMobilEndpoint(IndiwareMobilEndpoint):
+    vpdir_password = "mobr"
+    plan_file_url = Endpoints.indiware_mobil_rooms
+    plan_file_url2 = Endpoints.indiware_mobil_rooms2
+    vpinfo_url = Endpoints.indiware_mobil_rooms_vpinfo
+
+
+class Stundenplan24FormsIndiwareMobilEndpoint(FormsIndiwareMobilEndpoint):
+    def __init__(self, sp24_url: str):
+        self.url = urllib.parse.urljoin(sp24_url, "mobil/")
+
+
+class Stundenplan24TeachersIndiwareMobilEndpoint(TeachersIndiwareMobilEndpoint):
+    def __init__(self, sp24_url: str):
+        self.url = urllib.parse.urljoin(sp24_url, "moble/")
+
+
+class Stundenplan24RoomsIndiwareMobilEndpoint(RoomsIndiwareMobilEndpoint):
+    def __init__(self, sp24_url: str):
+        self.url = urllib.parse.urljoin(sp24_url, "mobra/")
+
+
+class SelfHostedIndiwareMobilEndpoint(IndiwareMobilEndpoint):
+    @classmethod
+    def create_forms_endpoint(cls, url: str):
+        endpoint = FormsIndiwareMobilEndpoint()
+        endpoint.url = url
+        return endpoint
+
+    @classmethod
+    def create_teachers_endpoint(cls, url: str):
+        endpoint = TeachersIndiwareMobilEndpoint()
+        endpoint.url = url
+        return endpoint
+
+    @classmethod
+    def create_rooms_endpoint(cls, url: str):
+        endpoint = RoomsIndiwareMobilEndpoint()
+        endpoint.url = url
+        return endpoint
 
 
 @dataclasses.dataclass
-class SelfHostedEndpointCollection(EndpointCollection):
-    indiware_mobil: str | None
-    substitution_plan: str | None
+class IndiwareMobilEndpoints:
+    forms: IndiwareMobilEndpoint | None
+    teachers: IndiwareMobilEndpoint | None
+    rooms: IndiwareMobilEndpoint | None
+
+    @classmethod
+    def from_stundenplan24(cls, sp24_url: str) -> IndiwareMobilEndpoints:
+        return cls(
+            forms=Stundenplan24FormsIndiwareMobilEndpoint(sp24_url),
+            teachers=Stundenplan24TeachersIndiwareMobilEndpoint(sp24_url),
+            rooms=Stundenplan24RoomsIndiwareMobilEndpoint(sp24_url)
+        )
+
+    @classmethod
+    def deserialize(cls, data: dict[str, typing.Any] | str) -> IndiwareMobilEndpoints:
+        if isinstance(data, str):
+            return cls.from_stundenplan24(data)
+        else:
+            return cls(
+                forms=SelfHostedIndiwareMobilEndpoint.create_forms_endpoint(url=data["students"]),
+                teachers=SelfHostedIndiwareMobilEndpoint.create_teachers_endpoint(url=data["teachers"]),
+                rooms=SelfHostedIndiwareMobilEndpoint.create_rooms_endpoint(url=data["rooms"])
+            )
+
+
+@dataclasses.dataclass
+class Hosting:
+    creds: dict[str, Credentials]
+
+    indiware_mobil: IndiwareMobilEndpoints | None
+    substitution_plan_students: str | None
+    substitution_plan_teachers: str | None
     week_plan: str | None
     timetable: str | None
+
+    @classmethod
+    def deserialize(cls, data: dict[str, typing.Any]):
+        creds = {type_: Credentials(**creds) for type_, creds in data["creds"].items()}
+        endpoints = data["endpoints"]
+
+        if isinstance(endpoints, str):
+            indiware_mobil = IndiwareMobilEndpoints.deserialize(endpoints)
+            substitution_plan_students = urllib.parse.urljoin(endpoints, "vplan/")
+            substitution_plan_teachers = urllib.parse.urljoin(endpoints, "vplanle/")
+            week_plan = urllib.parse.urljoin(endpoints, "wplan/")
+            timetable = urllib.parse.urljoin(endpoints, "splan/")
+        else:
+            indiware_mobil = (
+                IndiwareMobilEndpoints.deserialize(endpoints["indiware_mobil"])
+                if "indiware_mobil" in endpoints else None
+            )
+            substitution_plan_students = endpoints.get("substitution_plan_students")
+            substitution_plan_teachers = endpoints.get("substitution_plan_teachers")
+            week_plan = endpoints.get("week_plan")
+            timetable = endpoints.get("timetable")
+
+        return cls(
+            creds=creds,
+            indiware_mobil=indiware_mobil,
+            substitution_plan_students=substitution_plan_students,
+            substitution_plan_teachers=substitution_plan_teachers,
+            week_plan=week_plan,
+            timetable=timetable
+        )
 
 
 class NoPlanForDateError(Exception):
     pass
 
 
-class IndiwareStundenplanerClient:
+class IndiwareMobilClient:
     def __init__(self,
-                 endpoint_collection: EndpointCollection,
-                 credentials: Credentials):
-        self.endpoint_collection = endpoint_collection
+                 endpoint: IndiwareMobilEndpoint,
+                 credentials: Credentials | None):
+        self.endpoint = endpoint
         self.credentials = credentials
 
-    async def fetch_url(self, url: str, method: str = "GET", **kwargs) -> str:
-        auth = aiohttp.BasicAuth(self.credentials.username, self.credentials.password)
+    async def make_request(self, url: str, method: str = "GET", **kwargs) -> str:
+        return await IndiwareStundenplanerClient.make_request(self.credentials, url, method, **kwargs)
 
-        async with aiohttp.ClientSession() as session:
-            async with session.request(method, url, auth=auth, **kwargs) as response:
-                if response.status != 200:
-                    raise RuntimeError(f"Got status code {response.status} from {url!r}.", response.status)
-
-                return await response.text(encoding="utf-8")
-
-    async def fetch_indiware_mobil(self, date_or_filename: str | datetime.date | None = None) -> str:
+    async def fetch_plan(self, date_or_filename: str | datetime.date | None = None) -> str:
         if date_or_filename is None:
-            _url = Endpoints.indiware_mobil3
+            _url = self.endpoint.plan_file_url2
         elif isinstance(date_or_filename, str):
-            _url = Endpoints.indiware_mobil.format(filename=date_or_filename)
+            _url = Endpoints.indiware_mobil_file.format(filename=date_or_filename)
         elif isinstance(date_or_filename, datetime.date):
-            _url = Endpoints.indiware_mobil2.format(date=date_or_filename.strftime("%Y%m%d"))
+            _url = self.endpoint.plan_file_url.format(date=date_or_filename.strftime("%Y%m%d"))
         else:
             raise TypeError(f"date_or_filename must be str, datetime.date or None, not {type(date_or_filename)!r}.")
 
-        url = self.endpoint_collection.indiware_mobil + _url
+        url = urllib.parse.urljoin(self.endpoint.url, _url)
 
         try:
-            return await self.fetch_url(url)
+            return await self.make_request(url)
         except RuntimeError as e:
             if e.args[1] == 404:
-                raise NoPlanForDateError(f"No plan for {date_or_filename!r} found.") from e
+                raise NoPlanForDateError(f"No plan for {date_or_filename=} found.") from e
             else:
                 raise
 
-    async def fetch_dates_indiware_mobil(self) -> dict[str, datetime.datetime]:
-        url = self.endpoint_collection.indiware_mobil + Endpoints.indiware_mobil_vpdir
+    async def fetch_dates(self) -> dict[str, datetime.datetime]:
+        url = urllib.parse.urljoin(self.endpoint.url, Endpoints.indiware_mobil_vpdir)
 
         with aiohttp.MultipartWriter("form-data") as mpwriter:
             # noinspection PyTypeChecker
@@ -129,11 +250,11 @@ class IndiwareStundenplanerClient:
             )
             # noinspection PyTypeChecker
             mpwriter.append(
-                "mobk",
+                self.endpoint.vpdir_password,
                 {"Content-Disposition": 'form-data; name="art"'}
             )
 
-        _out = (await self.fetch_url(url, method="POST", data=mpwriter)).split(";")
+        _out = (await self.make_request(url, method="POST", data=mpwriter)).split(";")
 
         out: dict[str, datetime.datetime] = {}
         for i in range(0, len(_out), 2):
@@ -146,7 +267,30 @@ class IndiwareStundenplanerClient:
 
         return out
 
-    async def fetch_substitution_plan(self, date_or_filename: datetime.date | str | None = None) -> str:
+
+class IndiwareStundenplanerClient:
+    def __init__(self, hosting: Hosting):
+        self.hosting = hosting
+        self.form_plan_client = IndiwareMobilClient(hosting.indiware_mobil.forms, hosting.creds.get("students"))
+        self.teacher_plan_client = IndiwareMobilClient(hosting.indiware_mobil.teachers, hosting.creds.get("teachers"))
+        self.room_plan_client = IndiwareMobilClient(hosting.indiware_mobil.rooms, hosting.creds.get("teachers"))
+
+    @staticmethod
+    async def make_request(creds: Credentials | None, url: str, method: str = "GET", **kwargs) -> str:
+        auth = (
+            aiohttp.BasicAuth(creds.username, creds.password)
+            if creds is not None else None
+        )
+
+        async with aiohttp.ClientSession(headers={"User-Agent": "Indiware"}) as session:
+            async with session.request(method, url, auth=auth, **kwargs) as response:
+                if response.status != 200:
+                    raise RuntimeError(f"Got status code {response.status} from {url!r}.", response.status)
+
+                return await response.text(encoding="utf-8")
+
+    async def fetch_substitution_plan(self, base_url: str, creds: Credentials,
+                                      date_or_filename: datetime.date | str | None = None) -> str:
         if date_or_filename is None:
             _url = Endpoints.substitution_plan2.format(date="")
         elif isinstance(date_or_filename, str):
@@ -154,12 +298,26 @@ class IndiwareStundenplanerClient:
         else:
             _url = Endpoints.substitution_plan2.format(date=date_or_filename.strftime("%Y%m%d"))
 
-        url = self.endpoint_collection.substitution_plan + _url
+        url = urllib.parse.urljoin(base_url, _url)
 
         try:
-            return await self.fetch_url(url)
+            return await self.make_request(creds, url)
         except RuntimeError as e:
             if e.args[1] == 404:
                 raise NoPlanForDateError(f"No plan for {date_or_filename!r} found.") from e
             else:
                 raise
+
+    async def fetch_substitution_plan_students(self, date_or_filename: datetime.date | str | None = None) -> str:
+        return await self.fetch_substitution_plan(
+            self.hosting.substitution_plan_students,
+            self.hosting.creds["students"],
+            date_or_filename
+        )
+
+    async def fetch_substitution_plan_teachers(self, date_or_filename: datetime.date | str | None = None) -> str:
+        return await self.fetch_substitution_plan(
+            self.hosting.substitution_plan_teachers,
+            self.hosting.creds["teachers"],
+            date_or_filename
+        )

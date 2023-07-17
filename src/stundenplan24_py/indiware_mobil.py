@@ -64,8 +64,7 @@ class FormPlan:
         head = xml.find("Kopf")
         day.plan_type = head.find("planart").text
         assert day.plan_type == "K", (
-            f"Plan type {day.plan_type!r}. A plan type ('Planart') other than 'K' is not supported. "
-            "'K' is for 'Klassenplan', 'L' for 'Lehrerplan'."
+            f"Plan type {day.plan_type!r}. Only a plan type of 'K'=Klassenplan is a form plan."
         )
 
         day.timestamp = datetime.datetime.strptime(head.find("zeitstempel").text, "%d.%m.%Y, %H:%M")
@@ -187,6 +186,8 @@ class Lesson:
         lesson.subject = Value(xml.find("Fa").text, xml.find("Fa").get("FaAe") == "FaGeaendert")
         lesson.teacher = Value(xml.find("Le").text, xml.find("Le").get("LeAe") == "LeGeaendert")
         lesson.room = Value(xml.find("Ra").text, xml.find("Ra").get("RaAe") == "RaGeaendert")
+
+        # Ku2
 
         try:
             lesson.class_number = xml.find("Nr").text
