@@ -1,20 +1,9 @@
 # stundenplan24-wrapper
-A python wrapper for the `stundenplan24.de` API. This wrapper does not implement all features of the APIs because I can only test it on my school. 
+A python wrapper for the `stundenplan24.de` API and XML files of the Indiware Stundenplaner. This wrapper is probably not complete.
 
 ## Requirements
 - Python 3.9+
 - requirements in [`requirements.txt`](requirements.txt)
-- `creds.json`
-
-### `creds.json`
-`creds.json` in this repository is the example school.
-```json
-{
-    "school_number": {school_number},
-    "user_name": "{username}",
-    "password": "{password}"
-}
-```
 
 ## APIs
 There are four views for students:

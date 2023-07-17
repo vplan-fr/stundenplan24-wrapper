@@ -10,10 +10,11 @@ from pathlib import Path
 
 __all__ = [
     "Result",
-    "IndiwareMobilCrawler",
+    "NotInCacheError",
+    "IndiwareMobilCrawler"
 ]
 
-from .client import Stundenplan24Client
+from .client import IndiwareStundenplanerClient
 from .indiware_mobil import FormPlan
 
 T = typing.TypeVar("T")
@@ -40,7 +41,7 @@ class IndiwareMobilCrawler:
     _interpreter = staticmethod(lambda data: FormPlan.from_xml(ET.fromstring(data)))
 
     def __init__(self,
-                 client: Stundenplan24Client,
+                 client: IndiwareStundenplanerClient,
                  folder: Path):
         self.client = client
         self.folder = folder
