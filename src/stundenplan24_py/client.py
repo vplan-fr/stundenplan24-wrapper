@@ -283,7 +283,10 @@ class IndiwareMobilClient(PlanClient):
 
             filename, date_str = _out[i:i + 2]
 
-            out[filename] = datetime.datetime.strptime(date_str, "%d.%m.%Y %H:%M")
+            out[filename] = (
+                datetime.datetime.strptime(date_str, "%d.%m.%Y %H:%M")
+                .replace(tzinfo=datetime.timezone.utc)
+            )
 
         return out
 

@@ -5,6 +5,8 @@ import xml.etree.ElementTree as ET
 
 from stundenplan24_py.shared import Value, parse_free_days, Exam
 
+import pytz
+
 __all__ = ["SubstitutionPlan", "Action"]
 
 
@@ -43,7 +45,10 @@ class SubstitutionPlan:
         plan.filename = head.find("datei").text
         plan.title = head.find("titel").text
         plan.school_name = head.find("schulname").text
-        plan.timestamp = datetime.datetime.strptime(head.find("datum").text, "%d.%m.%Y, %H:%M")
+        plan.timestamp = (
+            pytz.timezone("Europe/Berlin")
+            .localize(datetime.datetime.strptime(head.find("datum").text, "%d.%m.%Y, %H:%M"))
+        )
 
         head_info = head.find("kopfinfo")
         # TODO: absent teachers sometimes have the absent periods in parens like this: Bob (3-7)

@@ -4,6 +4,8 @@ import dataclasses
 import datetime
 import xml.etree.ElementTree as ET
 
+import pytz
+
 from stundenplan24_py.shared import parse_free_days, Value, Exam
 
 __all__ = [
@@ -67,7 +69,10 @@ class FormPlan:
             f"Plan type {day.plan_type!r}. Only a plan type of 'K'=Klassenplan is a form plan."
         )
 
-        day.timestamp = datetime.datetime.strptime(head.find("zeitstempel").text, "%d.%m.%Y, %H:%M")
+        day.timestamp = (
+            pytz.timezone("Europe/Berlin")
+            .localize(datetime.datetime.strptime(head.find("zeitstempel").text, "%d.%m.%Y, %H:%M"))
+        )
         day.date = parse_plan_date(head.find("DatumPlan").text)
         day.filename = head.find("datei").text
         day.native = int(head.find("nativ").text)
