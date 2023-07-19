@@ -18,8 +18,12 @@ __all__ = [
     "SelfHostedIndiwareMobilEndpoint",
     "IndiwareMobilEndpoints",
     "Hosting",
+    "PlanClientError",
+    "UnauthorizedError",
     "NoPlanForDateError",
+    "PlanClient",
     "IndiwareMobilClient",
+    "SubstitutionPlanClient",
     "IndiwareStundenplanerClient"
 ]
 
@@ -205,19 +209,35 @@ class Hosting:
         )
 
 
-class NoPlanForDateError(Exception):
+class PlanClientError(Exception):
     pass
 
 
-class IndiwareMobilClient:
-    def __init__(self,
-                 endpoint: IndiwareMobilEndpoint,
-                 credentials: Credentials | None):
-        self.endpoint = endpoint
+class NoPlanForDateError(PlanClientError):
+    pass
+
+
+class UnauthorizedError(PlanClientError):
+    pass
+
+
+class PlanClient(abc.ABC):
+    def __init__(self, credentials: Credentials | None):
         self.credentials = credentials
+
+    @abc.abstractmethod
+    async def fetch_plan(self, date_or_filename: str | datetime.date | None = None) -> str:
+        pass
 
     async def make_request(self, url: str, method: str = "GET", **kwargs) -> str:
         return await IndiwareStundenplanerClient.make_request(self.credentials, url, method, **kwargs)
+
+
+class IndiwareMobilClient(PlanClient):
+    def __init__(self, endpoint: IndiwareMobilEndpoint, credentials: Credentials | None):
+        super().__init__(credentials)
+
+        self.endpoint = endpoint
 
     async def fetch_plan(self, date_or_filename: str | datetime.date | None = None) -> str:
         if date_or_filename is None:
@@ -233,7 +253,7 @@ class IndiwareMobilClient:
 
         try:
             return await self.make_request(url)
-        except RuntimeError as e:
+        except PlanClientError as e:
             if e.args[1] == 404:
                 raise NoPlanForDateError(f"No plan for {date_or_filename=} found.") from e
             else:
@@ -268,12 +288,45 @@ class IndiwareMobilClient:
         return out
 
 
+class SubstitutionPlanClient(PlanClient):
+    def __init__(self, base_url: str, credentials: Credentials | None):
+        super().__init__(credentials)
+
+        self.base_url = base_url
+
+    async def fetch_plan(self, date_or_filename: str | datetime.date | None = None) -> str:
+        if date_or_filename is None:
+            _url = Endpoints.substitution_plan2.format(date="")
+        elif isinstance(date_or_filename, str):
+            _url = Endpoints.substitution_plan.format(filename=date_or_filename)
+        else:
+            _url = Endpoints.substitution_plan2.format(date=date_or_filename.strftime("%Y%m%d"))
+
+        url = urllib.parse.urljoin(self.base_url, _url)
+
+        try:
+            return await self.make_request(url)
+        except PlanClientError as e:
+            if e.args[1] == 404:
+                raise NoPlanForDateError(f"No plan for {date_or_filename=} found.") from e
+            else:
+                raise
+
+
 class IndiwareStundenplanerClient:
     def __init__(self, hosting: Hosting):
         self.hosting = hosting
+
         self.form_plan_client = IndiwareMobilClient(hosting.indiware_mobil.forms, hosting.creds.get("students"))
         self.teacher_plan_client = IndiwareMobilClient(hosting.indiware_mobil.teachers, hosting.creds.get("teachers"))
         self.room_plan_client = IndiwareMobilClient(hosting.indiware_mobil.rooms, hosting.creds.get("teachers"))
+
+        self.students_substitution_plan_client = SubstitutionPlanClient(
+            hosting.substitution_plan_students, hosting.creds.get("students")
+        )
+        self.teachers_substitution_plan_client = SubstitutionPlanClient(
+            hosting.substitution_plan_teachers, hosting.creds.get("teachers")
+        )
 
     @staticmethod
     async def make_request(creds: Credentials | None, url: str, method: str = "GET", **kwargs) -> str:
@@ -284,40 +337,17 @@ class IndiwareStundenplanerClient:
 
         async with aiohttp.ClientSession(headers={"User-Agent": "Indiware"}) as session:
             async with session.request(method, url, auth=auth, **kwargs) as response:
+                if response.status == 401:
+                    raise UnauthorizedError(f"Invalid credentials for request to {url=}.", response.status)
                 if response.status != 200:
-                    raise RuntimeError(f"Got status code {response.status} from {url!r}.", response.status)
+                    raise PlanClientError(f"Got status code {response.status} from {url!r}.", response.status)
 
                 return await response.text(encoding="utf-8")
 
-    async def fetch_substitution_plan(self, base_url: str, creds: Credentials,
-                                      date_or_filename: datetime.date | str | None = None) -> str:
-        if date_or_filename is None:
-            _url = Endpoints.substitution_plan2.format(date="")
-        elif isinstance(date_or_filename, str):
-            _url = Endpoints.substitution_plan.format(filename=date_or_filename)
-        else:
-            _url = Endpoints.substitution_plan2.format(date=date_or_filename.strftime("%Y%m%d"))
+    @property
+    def indiware_mobil_clients(self):
+        return self.form_plan_client, self.teacher_plan_client, self.room_plan_client
 
-        url = urllib.parse.urljoin(base_url, _url)
-
-        try:
-            return await self.make_request(creds, url)
-        except RuntimeError as e:
-            if e.args[1] == 404:
-                raise NoPlanForDateError(f"No plan for {date_or_filename!r} found.") from e
-            else:
-                raise
-
-    async def fetch_substitution_plan_students(self, date_or_filename: datetime.date | str | None = None) -> str:
-        return await self.fetch_substitution_plan(
-            self.hosting.substitution_plan_students,
-            self.hosting.creds["students"],
-            date_or_filename
-        )
-
-    async def fetch_substitution_plan_teachers(self, date_or_filename: datetime.date | str | None = None) -> str:
-        return await self.fetch_substitution_plan(
-            self.hosting.substitution_plan_teachers,
-            self.hosting.creds["teachers"],
-            date_or_filename
-        )
+    @property
+    def substitution_plan_clients(self):
+        return self.students_substitution_plan_client, self.teachers_substitution_plan_client
