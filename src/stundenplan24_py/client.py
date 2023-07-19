@@ -162,9 +162,18 @@ class IndiwareMobilEndpoints:
             return cls.from_stundenplan24(data)
         else:
             return cls(
-                forms=SelfHostedIndiwareMobilEndpoint.create_forms_endpoint(url=data["students"]),
-                teachers=SelfHostedIndiwareMobilEndpoint.create_teachers_endpoint(url=data["teachers"]),
-                rooms=SelfHostedIndiwareMobilEndpoint.create_rooms_endpoint(url=data["rooms"])
+                forms=(
+                    SelfHostedIndiwareMobilEndpoint.create_forms_endpoint(url=data["students"])
+                    if "students" in data else None
+                ),
+                teachers=(
+                    SelfHostedIndiwareMobilEndpoint.create_teachers_endpoint(url=data["teachers"])
+                    if "teachers" in data else None
+                ),
+                rooms=(
+                    SelfHostedIndiwareMobilEndpoint.create_rooms_endpoint(url=data["rooms"])
+                    if "rooms" in data else None
+                )
             )
 
 
@@ -320,16 +329,25 @@ class IndiwareStundenplanerClient:
     def __init__(self, hosting: Hosting):
         self.hosting = hosting
 
-        self.form_plan_client = IndiwareMobilClient(hosting.indiware_mobil.forms, hosting.creds.get("students"))
-        self.teacher_plan_client = IndiwareMobilClient(hosting.indiware_mobil.teachers, hosting.creds.get("teachers"))
-        self.room_plan_client = IndiwareMobilClient(hosting.indiware_mobil.rooms, hosting.creds.get("teachers"))
+        self.form_plan_client = (
+            IndiwareMobilClient(hosting.indiware_mobil.forms, hosting.creds.get("students"))
+            if hosting.indiware_mobil.forms is not None else None
+        )
+        self.teacher_plan_client = (
+            IndiwareMobilClient(hosting.indiware_mobil.teachers, hosting.creds.get("teachers"))
+            if hosting.indiware_mobil.teachers is not None else None
+        )
+        self.room_plan_client = (
+            IndiwareMobilClient(hosting.indiware_mobil.rooms, hosting.creds.get("teachers"))
+            if hosting.indiware_mobil.rooms is not None else None
+        )
 
         self.students_substitution_plan_client = SubstitutionPlanClient(
             hosting.substitution_plan_students, hosting.creds.get("students")
-        )
+        ) if hosting.substitution_plan_students is not None else None
         self.teachers_substitution_plan_client = SubstitutionPlanClient(
             hosting.substitution_plan_teachers, hosting.creds.get("teachers")
-        )
+        ) if hosting.substitution_plan_teachers is not None else None
 
     @staticmethod
     async def make_request(creds: Credentials | None, url: str, method: str = "GET", **kwargs) -> str:
@@ -349,8 +367,14 @@ class IndiwareStundenplanerClient:
 
     @property
     def indiware_mobil_clients(self):
-        return self.form_plan_client, self.teacher_plan_client, self.room_plan_client
+        return filter(
+            lambda x: x is not None,
+            (self.form_plan_client, self.teacher_plan_client, self.room_plan_client)
+        )
 
     @property
     def substitution_plan_clients(self):
-        return self.students_substitution_plan_client, self.teachers_substitution_plan_client
+        return filter(
+            lambda x: x is not None,
+            (self.students_substitution_plan_client, self.teachers_substitution_plan_client)
+        )
