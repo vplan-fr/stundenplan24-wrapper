@@ -37,3 +37,4 @@ stundenplan24.de deletes any plan files older than ten days automatically.
 | Unterrichtsstunde  | lesson                |
 | Klausur            | exam                  |
 | Kursleiter         | course teacher        |
+| (Pausen)Aufsicht   | break supervision     |

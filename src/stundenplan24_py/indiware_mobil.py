@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import dataclasses
 import datetime
+import typing
 import xml.etree.ElementTree as ET
 
 import pytz
@@ -9,7 +10,7 @@ import pytz
 from stundenplan24_py.shared import parse_free_days, Value, Exam
 
 __all__ = [
-    "FormPlan",
+    "IndiwareMobilPlan",
     "Form",
     "Lesson",
     "Class"
@@ -44,7 +45,7 @@ def parse_plan_date(date: str) -> datetime.date:
     return datetime.date(int(year), months[month], int(day))
 
 
-class FormPlan:
+class IndiwareMobilPlan:
     plan_type: str
     timestamp: datetime.datetime  # time of last update
     date: datetime.date
@@ -65,9 +66,6 @@ class FormPlan:
         # parse head
         head = xml.find("Kopf")
         day.plan_type = head.find("planart").text
-        assert day.plan_type == "K", (
-            f"Plan type {day.plan_type!r}. Only a plan type of 'K'=Klassenplan is a form plan."
-        )
 
         day.timestamp = (
             pytz.timezone("Europe/Berlin")
@@ -110,6 +108,7 @@ class Form:
     classes: dict[str, Class]
     lessons: list[Lesson]
     exams: list[Exam]
+    break_supervisions: list[BreakSupervision]
 
     @classmethod
     def from_xml(cls, xml: ET.Element):
@@ -137,13 +136,13 @@ class Form:
 
         # parse courses
         form.courses = {}
-        for _course in xml.find("Kurse"):
+        for _course in xml.find("Kurse") or []:
             course = _course.find("KKz")
             form.courses |= {course.text: course.attrib["KLe"]}
 
         # parse classes
         form.classes = {}
-        for _class in xml.find("Unterricht"):
+        for _class in xml.find("Unterricht") or []:
             class_ = _class.find("UeNr")
             class_obj = Class(
                 teacher=class_.attrib["UeLe"],
@@ -162,6 +161,11 @@ class Form:
         for _exam in xml.find("Klausuren") or []:
             form.exams.append(Exam.from_xml_indiware_mobile(_exam))
 
+        # parse break supervisions
+        form.break_supervisions = []
+        for _break_supervision in xml.find("Aufsichten") or []:
+            form.break_supervisions.append(BreakSupervision.from_xml(_break_supervision))
+
         return form
 
 
@@ -172,6 +176,37 @@ class Class:
     group: str | None
 
 
+BREAK_SUPERVISION_SUBSTITUTION = "AuVertretung"
+BREAK_SUPERVISION_CANCELLED = "AuAusfall"
+
+
+class BreakSupervision:
+    status: str | None
+    day: int
+    before_period: int
+    clock_time: datetime.time
+    time_label: str
+    location: str
+    instead_of: str | None
+    information: str | None
+
+    @classmethod
+    def from_xml(cls, xml: ET.Element) -> typing.Self:
+        out = cls()
+
+        out.status = xml.get("AuAe")
+
+        out.day = int(xml.find("AuTag").text)
+        out.before_period = int(xml.find("AuVorStunde").text)
+        out.clock_time = datetime.datetime.strptime(xml.find("AuUhrzeit").text, "%H:%M").time()
+        out.time_label = xml.find("AuZeit").text
+        out.location = xml.find("AuOrt").text
+
+        out.instead_of = for_.text if (for_ := xml.find("AuFuer")) is not None else None
+        out.information = info.text if (info := xml.find("AuInfo")) is not None else None
+
+        return out
+
 class Lesson:
     period: int
     start: datetime.time
@@ -180,6 +215,8 @@ class Lesson:
     subject: Value
     teacher: Value
     room: Value
+
+    course2: str | None
 
     class_number: str | None
     information: str
@@ -198,13 +235,12 @@ class Lesson:
         lesson.teacher = Value(xml.find("Le").text, xml.find("Le").get("LeAe") == "LeGeaendert")
         lesson.room = Value(xml.find("Ra").text, xml.find("Ra").get("RaAe") == "RaGeaendert")
 
-        # Ku2
+        lesson.course2 = ku2.text if (ku2 := xml.find("Ku2")) is not None else None
 
         try:
             lesson.class_number = xml.find("Nr").text
         except AttributeError:
             lesson.class_number = None
-        lesson.information = (xml.find("If").text.strip()
-                              if xml.find("If").text is not None else None)
+        lesson.information = xml.find("If").text.strip() if xml.find("If").text is not None else None
 
         return lesson
