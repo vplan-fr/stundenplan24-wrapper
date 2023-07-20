@@ -125,8 +125,14 @@ class Form:
         form.periods = {}
         for period in xml.find("KlStunden"):
             start, end = period.attrib["ZeitVon"].strip(), period.attrib["ZeitBis"].strip()
-            start = datetime.datetime.strptime(start, "%H:%M").time()
-            end = datetime.datetime.strptime(end, "%H:%M").time()
+            try:
+                start = datetime.datetime.strptime(start, "%H:%M").time()
+            except ValueError:
+                continue
+            try:
+                end = datetime.datetime.strptime(end, "%H:%M").time()
+            except ValueError:
+                continue
             form.periods |= {int(period.text): (start, end)}
 
         # parse courses
