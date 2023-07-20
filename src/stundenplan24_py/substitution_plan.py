@@ -51,7 +51,7 @@ class SubstitutionPlan:
         )
 
         head_info = head.find("kopfinfo")
-        # TODO: absent teachers sometimes have the absent periods in parens like this: Bob (3-7)
+
         plan.absent_teachers = split_text_if_exists(head_info, "abwesendl")
         plan.absent_forms = split_text_if_exists(head_info, "abwesendk")
         plan.absent_rooms = split_text_if_exists(head_info, "abwesendr")
