@@ -8,19 +8,16 @@ import typing
 
 import aiohttp as aiohttp
 
+from .endpoints import *
+
 __all__ = [
     "Credentials",
-    "Endpoints",
-    "IndiwareMobilEndpoint",
-    "Stundenplan24FormsIndiwareMobilEndpoint",
-    "Stundenplan24RoomsIndiwareMobilEndpoint",
-    "Stundenplan24TeachersIndiwareMobilEndpoint",
-    "SelfHostedIndiwareMobilEndpoint",
-    "IndiwareMobilEndpoints",
     "Hosting",
     "PlanClientError",
+    "PlanNotFoundError",
     "UnauthorizedError",
-    "NoPlanForDateError",
+    "NotModifiedError",
+    "PlanResponse",
     "PlanClient",
     "IndiwareMobilClient",
     "SubstitutionPlanClient",
@@ -34,156 +31,12 @@ class Credentials:
     password: str
 
 
-class Endpoints:
-    # indiware mobil
-    indiware_mobil_vpdir = "_phpmob/vpdir.php"  # POST with data
-    indiware_mobil_file = "mobdaten/{filename}"
-
-    # /mobil/
-    indiware_mobil_forms = "mobdaten/PlanKl{date}.xml"  # date must not be "", use below
-    indiware_mobil_forms2 = "mobdaten/Klassen.xml"
-    indiware_mobil_forms_vpinfo = "mobdaten/vpinfok.txt"
-
-    # /moble/
-    indiware_mobil_teachers = "mobdaten/PlanLe{date}.xml"  # date must not be "", use below
-    indiware_mobil_teachers2 = "mobdaten/Lehrer.xml"
-    indiware_mobil_teachers_vpinfo = "mobdaten/vpinfol.txt"
-
-    # /mobra/
-    indiware_mobil_rooms = "mobdaten/PlanRa{date}.xml"  # date must not be "", use below
-    indiware_mobil_rooms2 = "mobdaten/Raeume.xml"
-    indiware_mobil_rooms_vpinfo = "mobdaten/vpinfor.txt"
-
-    # substitution plan (/vplan/ or /vplanle/)
-    substitution_plan = "vdaten/{filename}.xml"
-    substitution_plan2 = "vdaten/VplanKl{date}.xml"  # date can be ""
-
-    # week plan (/wplan/)
-    week_plan_forms_timetable = "wdatenk/SPlanKl_Sw{school_week}.xml"
-    week_plan_forms_timetable2 = "wdatenk/SPlanKl_Basis.xml"
-    week_plan_forms = "wdatenk/WPlanKl_{date}.xml"  # date must not be ""
-
-    week_plan_teachers_timetable = "wdatenr/SPlanLe_Sw{school_week}.xml"
-    week_plan_teachers_timetable2 = "wdatenr/SPlanLe_Basis.xml"
-    week_plan_teachers = "wdatenr/WPlanLe_{date}.xml"  # date must not be ""
-
-    week_plan_rooms_timetable = "wdatenl/SPlanRa_Sw{school_week}.xml"
-    week_plan_rooms_timetable2 = "wdatenl/SPlanRa_Basis.xml"
-    week_plan_rooms = "wdatenl/WPlanRa_{date}.xml"  # date must not be ""
-
-    # timetable (/splan/)
-    timetable_forms = "sdaten/splank.xml"
-    timetable_teachers = "sdaten/splanl.xml"
-    timetable_rooms = "sdaten/splanr.xml"
-
-
-class IndiwareMobilEndpoint(abc.ABC):
-    url: str
-    vpdir_password: str  # usually mob[k|l|r]
-
-    plan_file_url: str
-    plan_file_url2: str
-    vpinfo_url: str
-
-
-class FormsIndiwareMobilEndpoint(IndiwareMobilEndpoint):
-    vpdir_password = "mobk"
-    plan_file_url = Endpoints.indiware_mobil_forms
-    plan_file_url2 = Endpoints.indiware_mobil_forms2
-    vpinfo_url = Endpoints.indiware_mobil_forms_vpinfo
-
-
-class TeachersIndiwareMobilEndpoint(IndiwareMobilEndpoint):
-    vpdir_password = "mobl"
-    plan_file_url = Endpoints.indiware_mobil_teachers
-    plan_file_url2 = Endpoints.indiware_mobil_teachers2
-    vpinfo_url = Endpoints.indiware_mobil_teachers_vpinfo
-
-
-class RoomsIndiwareMobilEndpoint(IndiwareMobilEndpoint):
-    vpdir_password = "mobr"
-    plan_file_url = Endpoints.indiware_mobil_rooms
-    plan_file_url2 = Endpoints.indiware_mobil_rooms2
-    vpinfo_url = Endpoints.indiware_mobil_rooms_vpinfo
-
-
-class Stundenplan24FormsIndiwareMobilEndpoint(FormsIndiwareMobilEndpoint):
-    def __init__(self, sp24_url: str):
-        self.url = urllib.parse.urljoin(sp24_url, "mobil/")
-
-
-class Stundenplan24TeachersIndiwareMobilEndpoint(TeachersIndiwareMobilEndpoint):
-    def __init__(self, sp24_url: str):
-        self.url = urllib.parse.urljoin(sp24_url, "moble/")
-
-
-class Stundenplan24RoomsIndiwareMobilEndpoint(RoomsIndiwareMobilEndpoint):
-    def __init__(self, sp24_url: str):
-        self.url = urllib.parse.urljoin(sp24_url, "mobra/")
-
-
-class SelfHostedIndiwareMobilEndpoint(IndiwareMobilEndpoint):
-    @classmethod
-    def create_forms_endpoint(cls, url: str):
-        endpoint = FormsIndiwareMobilEndpoint()
-        endpoint.url = url
-        return endpoint
-
-    @classmethod
-    def create_teachers_endpoint(cls, url: str):
-        endpoint = TeachersIndiwareMobilEndpoint()
-        endpoint.url = url
-        return endpoint
-
-    @classmethod
-    def create_rooms_endpoint(cls, url: str):
-        endpoint = RoomsIndiwareMobilEndpoint()
-        endpoint.url = url
-        return endpoint
-
-
-@dataclasses.dataclass
-class IndiwareMobilEndpoints:
-    forms: IndiwareMobilEndpoint | None
-    teachers: IndiwareMobilEndpoint | None
-    rooms: IndiwareMobilEndpoint | None
-
-    @classmethod
-    def from_stundenplan24(cls, sp24_url: str) -> IndiwareMobilEndpoints:
-        return cls(
-            forms=Stundenplan24FormsIndiwareMobilEndpoint(sp24_url),
-            teachers=Stundenplan24TeachersIndiwareMobilEndpoint(sp24_url),
-            rooms=Stundenplan24RoomsIndiwareMobilEndpoint(sp24_url)
-        )
-
-    @classmethod
-    def deserialize(cls, data: dict[str, typing.Any] | str) -> IndiwareMobilEndpoints:
-        if isinstance(data, str):
-            return cls.from_stundenplan24(data)
-        else:
-            return cls(
-                forms=(
-                    SelfHostedIndiwareMobilEndpoint.create_forms_endpoint(url=data["students"])
-                    if "students" in data else None
-                ),
-                teachers=(
-                    SelfHostedIndiwareMobilEndpoint.create_teachers_endpoint(url=data["teachers"])
-                    if "teachers" in data else None
-                ),
-                rooms=(
-                    SelfHostedIndiwareMobilEndpoint.create_rooms_endpoint(url=data["rooms"])
-                    if "rooms" in data else None
-                )
-            )
-
-
 @dataclasses.dataclass
 class Hosting:
     creds: dict[str, Credentials]
 
     indiware_mobil: IndiwareMobilEndpoints | None
-    substitution_plan_students: str | None
-    substitution_plan_teachers: str | None
+    substitution_plan: SubstitutionPlanEndpoints | None
     week_plan: str | None
     timetable: str | None
 
@@ -193,9 +46,8 @@ class Hosting:
         endpoints = data["endpoints"]
 
         if isinstance(endpoints, str):
-            indiware_mobil = IndiwareMobilEndpoints.deserialize(endpoints)
-            substitution_plan_students = urllib.parse.urljoin(endpoints, "vplan/")
-            substitution_plan_teachers = urllib.parse.urljoin(endpoints, "vplanle/")
+            indiware_mobil = IndiwareMobilEndpoints.from_stundenplan24(endpoints)
+            substitution_plan = SubstitutionPlanEndpoints.from_stundenplan24(endpoints)
             week_plan = urllib.parse.urljoin(endpoints, "wplan/")
             timetable = urllib.parse.urljoin(endpoints, "splan/")
         else:
@@ -203,16 +55,17 @@ class Hosting:
                 IndiwareMobilEndpoints.deserialize(endpoints["indiware_mobil"])
                 if "indiware_mobil" in endpoints else None
             )
-            substitution_plan_students = endpoints.get("substitution_plan_students")
-            substitution_plan_teachers = endpoints.get("substitution_plan_teachers")
+            substitution_plan = (
+                SubstitutionPlanEndpoints.deserialize(endpoints["substitution_plan"])
+                if "substitution_plan" in endpoints else None
+            )
             week_plan = endpoints.get("week_plan")
             timetable = endpoints.get("timetable")
 
         return cls(
             creds=creds,
             indiware_mobil=indiware_mobil,
-            substitution_plan_students=substitution_plan_students,
-            substitution_plan_teachers=substitution_plan_teachers,
+            substitution_plan=substitution_plan,
             week_plan=week_plan,
             timetable=timetable
         )
@@ -222,7 +75,7 @@ class PlanClientError(Exception):
     pass
 
 
-class NoPlanForDateError(PlanClientError):
+class PlanNotFoundError(PlanClientError):
     pass
 
 
@@ -230,25 +83,101 @@ class UnauthorizedError(PlanClientError):
     pass
 
 
+class NotModifiedError(PlanClientError):
+    pass
+
+
+@dataclasses.dataclass
+class PlanResponse:
+    content: str
+    response: aiohttp.ClientResponse
+
+    @property
+    def last_modified(self) -> datetime.datetime | None:
+        if "Last-Modified" in self.response.headers:
+            return datetime.datetime.strptime(self.response.headers["Last-Modified"], "%a, %d %b %Y %H:%M:%S %Z")
+        else:
+            return None
+
+    @property
+    def etag(self) -> str | None:
+        return self.response.headers.get("ETag", None)
+
+
+class PlanClientRequestContextManager:
+    def __init__(self, aiohttp_request_context_manager: aiohttp.client._RequestContextManager):
+        self.context_manager = aiohttp_request_context_manager
+
+    async def __aenter__(self):
+        response = await self.context_manager.__aenter__()
+
+        if response.status == 401:
+            raise UnauthorizedError(f"Invalid credentials for request to {response.url!r}.", response.status)
+        elif response.status == 304:
+            raise NotModifiedError(f"The requested ressource on {response.url!r} has not been modified since "
+                                   f"{response.headers.get('If-Modified-Since')!r}.")
+
+        return response
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        await self.context_manager.__aexit__(exc_type, exc_val, exc_tb)
+
+
 class PlanClient(abc.ABC):
-    def __init__(self, credentials: Credentials | None):
+    def __init__(self, credentials: Credentials | None, session: aiohttp.ClientSession | None = None):
         self.credentials = credentials
+        self.session = aiohttp.ClientSession() if session is None else session
 
     @abc.abstractmethod
-    async def fetch_plan(self, date_or_filename: str | datetime.date | None = None) -> str:
-        pass
+    async def fetch_plan(self, date_or_filename: str | datetime.date | None = None,
+                         if_modified_since: datetime.datetime | None = None) -> PlanResponse:
+        ...
 
-    async def make_request(self, url: str, method: str = "GET", **kwargs) -> str:
-        return await IndiwareStundenplanerClient.make_request(self.credentials, url, method, **kwargs)
+    def make_request(
+            self,
+            url: str,
+            method: str = "GET",
+            if_modified_since: datetime.datetime | None = None,
+            if_none_match: str | None = None,
+            **kwargs
+    ) -> PlanClientRequestContextManager:
+        auth = (
+            aiohttp.BasicAuth(self.credentials.username, self.credentials.password)
+            if self.credentials is not None else None
+        )
+
+        kwargs = dict(
+            method=method,
+            url=url,
+            auth=auth,
+            **kwargs
+        )
+
+        if_modified_since_header = {"If-Modified-Since": (
+            if_modified_since.astimezone(datetime.timezone.utc).strftime("%a, %d %b %Y %H:%M:%S GMT")
+        )} if if_modified_since is not None else {}
+
+        if_none_match_header = {"If-None-Match": if_none_match} if if_none_match is not None else {}
+
+        kwargs["headers"] = (
+                {"User-Agent": "Indiware"}
+                | if_modified_since_header
+                | if_none_match_header
+                | kwargs.get("headers", {})
+        )
+
+        return PlanClientRequestContextManager(self.session.request(**kwargs))
 
 
 class IndiwareMobilClient(PlanClient):
-    def __init__(self, endpoint: IndiwareMobilEndpoint, credentials: Credentials | None):
-        super().__init__(credentials)
+    def __init__(self, endpoint: IndiwareMobilEndpoint, credentials: Credentials | None,
+                 session: aiohttp.ClientSession | None = None):
+        super().__init__(credentials, session)
 
         self.endpoint = endpoint
 
-    async def fetch_plan(self, date_or_filename: str | datetime.date | None = None) -> str:
+    async def fetch_plan(self, date_or_filename: str | datetime.date | None = None,
+                         if_modified_since: datetime.datetime | None = None) -> PlanResponse:
         if date_or_filename is None:
             _url = self.endpoint.plan_file_url2
         elif isinstance(date_or_filename, str):
@@ -260,15 +189,20 @@ class IndiwareMobilClient(PlanClient):
 
         url = urllib.parse.urljoin(self.endpoint.url, _url)
 
-        try:
-            return await self.make_request(url)
-        except PlanClientError as e:
-            if e.args[1] == 404:
-                raise NoPlanForDateError(f"No plan for {date_or_filename=} found.") from e
-            else:
-                raise
+        async with self.make_request(url, if_modified_since=if_modified_since) as response:
+            if response.status == 404:
+                raise PlanNotFoundError(f"No plan for {date_or_filename=} found.")
+            elif response.status != 200:
+                raise PlanClientError(f"Unexpected status code {response.status} for request to {url=}.")
+
+            return PlanResponse(
+                content=await response.text(encoding="utf-8"),
+                response=response
+            )
 
     async def fetch_dates(self) -> dict[str, datetime.datetime]:
+        """Return a dictionary of available file names and their last modification date."""
+
         url = urllib.parse.urljoin(self.endpoint.url, Endpoints.indiware_mobil_vpdir)
 
         with aiohttp.MultipartWriter("form-data") as mpwriter:
@@ -283,7 +217,11 @@ class IndiwareMobilClient(PlanClient):
                 {"Content-Disposition": 'form-data; name="art"'}
             )
 
-        _out = (await self.make_request(url, method="POST", data=mpwriter)).split(";")
+        async with self.make_request(url, method="POST", data=mpwriter) as response:
+            if response.status != 200:
+                raise PlanClientError(f"Unexpected status code {response.status} for request to {url=}.")
+
+            _out = (await response.text(encoding="utf-8")).split(";")
 
         out: dict[str, datetime.datetime] = {}
         for i in range(0, len(_out), 2):
@@ -301,69 +239,75 @@ class IndiwareMobilClient(PlanClient):
 
 
 class SubstitutionPlanClient(PlanClient):
-    def __init__(self, base_url: str, credentials: Credentials | None):
-        super().__init__(credentials)
+    def __init__(self, endpoint: SubstitutionPlanEndpoint, credentials: Credentials | None,
+                 session: aiohttp.ClientSession | None = None):
+        super().__init__(credentials, session)
 
-        self.base_url = base_url
+        self.endpoint = endpoint
 
-    async def fetch_plan(self, date_or_filename: str | datetime.date | None = None) -> str:
+    def get_url(self, date_or_filename: str | datetime.date | None = None) -> str:
         if date_or_filename is None:
-            _url = Endpoints.substitution_plan2.format(date="")
+            _url = self.endpoint.plan_file_url2.format(date="")
         elif isinstance(date_or_filename, str):
             _url = Endpoints.substitution_plan.format(filename=date_or_filename)
         else:
-            _url = Endpoints.substitution_plan2.format(date=date_or_filename.strftime("%Y%m%d"))
+            _url = self.endpoint.plan_file_url2.format(date=date_or_filename.strftime("%Y%m%d"))
 
-        url = urllib.parse.urljoin(self.base_url, _url)
+        return urllib.parse.urljoin(self.endpoint.url, _url)
 
-        try:
-            return await self.make_request(url)
-        except PlanClientError as e:
-            if e.args[1] == 404:
-                raise NoPlanForDateError(f"No plan for {date_or_filename=} found.") from e
-            else:
-                raise
+    async def fetch_plan(self, date_or_filename: str | datetime.date | None = None,
+                         if_modified_since: datetime.datetime | None = None) -> PlanResponse:
+        url = self.get_url(date_or_filename)
+
+        async with self.make_request(url, if_modified_since=if_modified_since) as response:
+            if response.status == 404:
+                raise PlanNotFoundError(f"No plan for {date_or_filename=} found.")
+            elif response.status != 200:
+                raise PlanClientError(f"Unexpected status code {response.status} for request to {url=}.")
+
+            return PlanResponse(
+                content=await response.text(encoding="utf-8"),
+                response=response
+            )
+
+    async def get_modified_since(self, date_or_filename: str | datetime.date | None = None) -> datetime.datetime:
+        url = self.get_url(date_or_filename)
+
+        async with self.make_request(url, method="HEAD") as response:
+            if response.status == 404:
+                raise PlanNotFoundError(f"No plan for {date_or_filename=} found.")
+            elif response.status != 200:
+                raise PlanClientError(f"Unexpected status code {response.status} for request to {url=}.")
+
+            return (
+                datetime.datetime.strptime(response.headers["Last-Modified"], "%a, %d %b %Y %H:%M:%S %Z")
+                if "Last-Modified" in response.headers else None
+            )
 
 
 class IndiwareStundenplanerClient:
-    def __init__(self, hosting: Hosting):
+    def __init__(self, hosting: Hosting, session: aiohttp.ClientSession | None = None):
         self.hosting = hosting
 
         self.form_plan_client = (
-            IndiwareMobilClient(hosting.indiware_mobil.forms, hosting.creds.get("students"))
+            IndiwareMobilClient(hosting.indiware_mobil.forms, hosting.creds.get("students"), session=session)
             if hosting.indiware_mobil.forms is not None else None
         )
         self.teacher_plan_client = (
-            IndiwareMobilClient(hosting.indiware_mobil.teachers, hosting.creds.get("teachers"))
+            IndiwareMobilClient(hosting.indiware_mobil.teachers, hosting.creds.get("teachers"), session=session)
             if hosting.indiware_mobil.teachers is not None else None
         )
         self.room_plan_client = (
-            IndiwareMobilClient(hosting.indiware_mobil.rooms, hosting.creds.get("teachers"))
+            IndiwareMobilClient(hosting.indiware_mobil.rooms, hosting.creds.get("teachers"), session=session)
             if hosting.indiware_mobil.rooms is not None else None
         )
 
         self.students_substitution_plan_client = SubstitutionPlanClient(
-            hosting.substitution_plan_students, hosting.creds.get("students")
-        ) if hosting.substitution_plan_students is not None else None
+            hosting.substitution_plan.students, hosting.creds.get("students"), session=session
+        ) if hosting.substitution_plan.students is not None else None
         self.teachers_substitution_plan_client = SubstitutionPlanClient(
-            hosting.substitution_plan_teachers, hosting.creds.get("teachers")
-        ) if hosting.substitution_plan_teachers is not None else None
-
-    @staticmethod
-    async def make_request(creds: Credentials | None, url: str, method: str = "GET", **kwargs) -> str:
-        auth = (
-            aiohttp.BasicAuth(creds.username, creds.password)
-            if creds is not None else None
-        )
-
-        async with aiohttp.ClientSession(headers={"User-Agent": "Indiware"}) as session:
-            async with session.request(method, url, auth=auth, **kwargs) as response:
-                if response.status == 401:
-                    raise UnauthorizedError(f"Invalid credentials for request to {url=}.", response.status)
-                if response.status != 200:
-                    raise PlanClientError(f"Got status code {response.status} from {url!r}.", response.status)
-
-                return await response.text(encoding="utf-8")
+            hosting.substitution_plan.teachers, hosting.creds.get("teachers"), session=session
+        ) if hosting.substitution_plan.teachers is not None else None
 
     @property
     def indiware_mobil_clients(self):

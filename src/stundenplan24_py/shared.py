@@ -22,7 +22,7 @@ def parse_free_days(xml: ET.Element) -> list[datetime.date]:
 
 @dataclasses.dataclass
 class Value:
-    content: str
+    content: str | None
     was_changed: bool
 
     def __str__(self):
