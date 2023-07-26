@@ -4,6 +4,7 @@ import abc
 import dataclasses
 import datetime
 import urllib.parse
+import email.utils
 import typing
 
 import aiohttp as aiohttp
@@ -72,7 +73,9 @@ class Hosting:
 
 
 class PlanClientError(Exception):
-    pass
+    def __init__(self, message: str, status_code: int):
+        super().__init__(message)
+        self.status_code = status_code
 
 
 class PlanNotFoundError(PlanClientError):
@@ -95,7 +98,7 @@ class PlanResponse:
     @property
     def last_modified(self) -> datetime.datetime | None:
         if "Last-Modified" in self.response.headers:
-            return datetime.datetime.strptime(self.response.headers["Last-Modified"], "%a, %d %b %Y %H:%M:%S %Z")
+            return email.utils.parsedate_to_datetime(self.response.headers["Last-Modified"])
         else:
             return None
 
@@ -115,7 +118,7 @@ class PlanClientRequestContextManager:
             raise UnauthorizedError(f"Invalid credentials for request to {response.url!r}.", response.status)
         elif response.status == 304:
             raise NotModifiedError(f"The requested ressource on {response.url!r} has not been modified since "
-                                   f"{response.headers.get('If-Modified-Since')!r}.")
+                                   f"{response.headers.get('If-Modified-Since')!r}.", response.status)
 
         return response
 
@@ -176,8 +179,12 @@ class IndiwareMobilClient(PlanClient):
 
         self.endpoint = endpoint
 
-    async def fetch_plan(self, date_or_filename: str | datetime.date | None = None,
-                         if_modified_since: datetime.datetime | None = None) -> PlanResponse:
+    async def fetch_plan(
+            self,
+            date_or_filename: str | datetime.date | None = None,
+            if_modified_since: datetime.datetime | None = None,
+            if_none_match: str | None = None
+    ) -> PlanResponse:
         if date_or_filename is None:
             _url = self.endpoint.plan_file_url2
         elif isinstance(date_or_filename, str):
@@ -191,9 +198,10 @@ class IndiwareMobilClient(PlanClient):
 
         async with self.make_request(url, if_modified_since=if_modified_since) as response:
             if response.status == 404:
-                raise PlanNotFoundError(f"No plan for {date_or_filename=} found.")
+                raise PlanNotFoundError(f"No plan for {date_or_filename=} found.", response.status)
             elif response.status != 200:
-                raise PlanClientError(f"Unexpected status code {response.status} for request to {url=}.")
+                raise PlanClientError(f"Unexpected status code {response.status} for request to {url=}.",
+                                      response.status)
 
             return PlanResponse(
                 content=await response.text(encoding="utf-8"),
@@ -219,7 +227,8 @@ class IndiwareMobilClient(PlanClient):
 
         async with self.make_request(url, method="POST", data=mpwriter) as response:
             if response.status != 200:
-                raise PlanClientError(f"Unexpected status code {response.status} for request to {url=}.")
+                raise PlanClientError(f"Unexpected status code {response.status} for request to {url=}.",
+                                      response.status)
 
             _out = (await response.text(encoding="utf-8")).split(";")
 
@@ -255,8 +264,12 @@ class SubstitutionPlanClient(PlanClient):
 
         return urllib.parse.urljoin(self.endpoint.url, _url)
 
-    async def fetch_plan(self, date_or_filename: str | datetime.date | None = None,
-                         if_modified_since: datetime.datetime | None = None) -> PlanResponse:
+    async def fetch_plan(
+            self,
+            date_or_filename: str | datetime.date | None = None,
+            if_modified_since: datetime.datetime | None = None,
+            if_none_match: str | None = None
+    ) -> PlanResponse:
         url = self.get_url(date_or_filename)
 
         async with self.make_request(url, if_modified_since=if_modified_since) as response:
@@ -270,7 +283,7 @@ class SubstitutionPlanClient(PlanClient):
                 response=response
             )
 
-    async def get_modified_since(self, date_or_filename: str | datetime.date | None = None) -> datetime.datetime:
+    async def get_metadata(self, date_or_filename: str | datetime.date | None = None) -> tuple[datetime.datetime, str]:
         url = self.get_url(date_or_filename)
 
         async with self.make_request(url, method="HEAD") as response:
@@ -279,10 +292,9 @@ class SubstitutionPlanClient(PlanClient):
             elif response.status != 200:
                 raise PlanClientError(f"Unexpected status code {response.status} for request to {url=}.")
 
-            return (
-                datetime.datetime.strptime(response.headers["Last-Modified"], "%a, %d %b %Y %H:%M:%S %Z")
-                if "Last-Modified" in response.headers else None
-            )
+            plan_response = PlanResponse("", response)
+
+            return plan_response.last_modified, plan_response.etag
 
 
 class IndiwareStundenplanerClient:
