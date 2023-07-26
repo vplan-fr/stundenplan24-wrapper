@@ -7,7 +7,7 @@ import xml.etree.ElementTree as ET
 
 import pytz
 
-from stundenplan24_py.shared import parse_free_days, Value, Exam
+from .shared import parse_free_days, parse_plan_date, Value, Exam
 
 __all__ = [
     "IndiwareMobilPlan",
@@ -15,34 +15,6 @@ __all__ = [
     "Lesson",
     "Class"
 ]
-
-
-def parse_plan_date(date: str) -> datetime.date:
-    """
-    Example: Freitag, 23. Juni 2023
-    """
-
-    months = {
-        "Januar": 1,
-        "Februar": 2,
-        "März": 3,
-        "April": 4,
-        "Mai": 5,
-        "Juni": 6,
-        "Juli": 7,
-        "August": 8,
-        "September": 9,
-        "Oktober": 10,
-        "November": 11,
-        "Dezember": 12
-    }
-
-    _, date = date.split(", ", 1)
-
-    day, month_and_year = date.split(". ", 1)
-    month, year = month_and_year.split(" ", 1)
-
-    return datetime.date(int(year), months[month], int(day))
 
 
 class IndiwareMobilPlan:
@@ -206,6 +178,7 @@ class BreakSupervision:
         out.information = info.text if (info := xml.find("AuInfo")) is not None else None
 
         return out
+
 
 class Lesson:
     period: int

@@ -274,9 +274,10 @@ class SubstitutionPlanClient(PlanClient):
 
         async with self.make_request(url, if_modified_since=if_modified_since) as response:
             if response.status == 404:
-                raise PlanNotFoundError(f"No plan for {date_or_filename=} found.")
+                raise PlanNotFoundError(f"No plan for {date_or_filename=} found.", response.status)
             elif response.status != 200:
-                raise PlanClientError(f"Unexpected status code {response.status} for request to {url=}.")
+                raise PlanClientError(f"Unexpected status code {response.status} for request to {url=}.",
+                                      response.status)
 
             return PlanResponse(
                 content=await response.text(encoding="utf-8"),
@@ -288,9 +289,10 @@ class SubstitutionPlanClient(PlanClient):
 
         async with self.make_request(url, method="HEAD") as response:
             if response.status == 404:
-                raise PlanNotFoundError(f"No plan for {date_or_filename=} found.")
+                raise PlanNotFoundError(f"No plan for {date_or_filename=} found.", response.status)
             elif response.status != 200:
-                raise PlanClientError(f"Unexpected status code {response.status} for request to {url=}.")
+                raise PlanClientError(f"Unexpected status code {response.status} for request to {url=}.",
+                                      response.status)
 
             plan_response = PlanResponse("", response)
 
