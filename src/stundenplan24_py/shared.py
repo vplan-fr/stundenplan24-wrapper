@@ -43,7 +43,10 @@ def parse_plan_date(date: str) -> datetime.date:
     _, date = date.split(", ", 1)
 
     day, month_and_year = date.split(". ", 1)
-    month, year = month_and_year.split(" ", 1)
+    month, _year = month_and_year.split(" ", 1)
+
+    # _year sometimes contains the week. Example: "2023 (A-Woche)"
+    year, *_ = _year.split(" ", 1)
 
     return datetime.date(int(year), months[month], int(day))
 
