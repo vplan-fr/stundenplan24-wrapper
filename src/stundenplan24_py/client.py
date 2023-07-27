@@ -6,6 +6,7 @@ import datetime
 import urllib.parse
 import email.utils
 import typing
+import asyncio
 
 import aiohttp as aiohttp
 
@@ -36,8 +37,8 @@ class Credentials:
 class Hosting:
     creds: dict[str, Credentials]
 
-    indiware_mobil: IndiwareMobilEndpoints | None
-    substitution_plan: SubstitutionPlanEndpoints | None
+    indiware_mobil: IndiwareMobilEndpoints
+    substitution_plan: SubstitutionPlanEndpoints
     week_plan: str | None
     timetable: str | None
 
@@ -54,11 +55,11 @@ class Hosting:
         else:
             indiware_mobil = (
                 IndiwareMobilEndpoints.deserialize(endpoints["indiware_mobil"])
-                if "indiware_mobil" in endpoints else None
+                if "indiware_mobil" in endpoints else IndiwareMobilEndpoints()
             )
             substitution_plan = (
                 SubstitutionPlanEndpoints.deserialize(endpoints["substitution_plan"])
-                if "substitution_plan" in endpoints else None
+                if "substitution_plan" in endpoints else SubstitutionPlanEndpoints()
             )
             week_plan = endpoints.get("week_plan")
             timetable = endpoints.get("timetable")
@@ -171,6 +172,9 @@ class PlanClient(abc.ABC):
 
         return PlanClientRequestContextManager(self.session.request(**kwargs))
 
+    async def close(self):
+        await self.session.close()
+
 
 class IndiwareMobilClient(PlanClient):
     def __init__(self, endpoint: IndiwareMobilEndpoint, credentials: Credentials | None,
@@ -182,8 +186,7 @@ class IndiwareMobilClient(PlanClient):
     async def fetch_plan(
             self,
             date_or_filename: str | datetime.date | None = None,
-            if_modified_since: datetime.datetime | None = None,
-            if_none_match: str | None = None
+            **kwargs
     ) -> PlanResponse:
         if date_or_filename is None:
             _url = self.endpoint.plan_file_url2
@@ -196,7 +199,7 @@ class IndiwareMobilClient(PlanClient):
 
         url = urllib.parse.urljoin(self.endpoint.url, _url)
 
-        async with self.make_request(url, if_modified_since=if_modified_since) as response:
+        async with self.make_request(url, **kwargs) as response:
             if response.status == 404:
                 raise PlanNotFoundError(f"No plan for {date_or_filename=} found.", response.status)
             elif response.status != 200:
@@ -208,7 +211,7 @@ class IndiwareMobilClient(PlanClient):
                 response=response
             )
 
-    async def fetch_dates(self) -> dict[str, datetime.datetime]:
+    async def fetch_dates(self, **kwargs) -> dict[str, datetime.datetime]:
         """Return a dictionary of available file names and their last modification date."""
 
         url = urllib.parse.urljoin(self.endpoint.url, Endpoints.indiware_mobil_vpdir)
@@ -225,7 +228,7 @@ class IndiwareMobilClient(PlanClient):
                 {"Content-Disposition": 'form-data; name="art"'}
             )
 
-        async with self.make_request(url, method="POST", data=mpwriter) as response:
+        async with self.make_request(url, method="POST", data=mpwriter, **kwargs) as response:
             if response.status != 200:
                 raise PlanClientError(f"Unexpected status code {response.status} for request to {url=}.",
                                       response.status)
@@ -267,12 +270,11 @@ class SubstitutionPlanClient(PlanClient):
     async def fetch_plan(
             self,
             date_or_filename: str | datetime.date | None = None,
-            if_modified_since: datetime.datetime | None = None,
-            if_none_match: str | None = None
+            **kwargs
     ) -> PlanResponse:
         url = self.get_url(date_or_filename)
 
-        async with self.make_request(url, if_modified_since=if_modified_since) as response:
+        async with self.make_request(url, **kwargs) as response:
             if response.status == 404:
                 raise PlanNotFoundError(f"No plan for {date_or_filename=} found.", response.status)
             elif response.status != 200:
@@ -336,3 +338,9 @@ class IndiwareStundenplanerClient:
             lambda x: x is not None,
             (self.students_substitution_plan_client, self.teachers_substitution_plan_client)
         )
+
+    async def close(self):
+        await asyncio.gather(*(
+                [client.close() for client in self.indiware_mobil_clients]
+                + [client.close() for client in self.substitution_plan_clients]
+        ))

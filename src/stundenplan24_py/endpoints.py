@@ -110,9 +110,9 @@ class RoomsIndiwareMobilEndpoint(IndiwareMobilEndpoint):
 
 @dataclasses.dataclass
 class IndiwareMobilEndpoints:
-    forms: IndiwareMobilEndpoint | None
-    teachers: IndiwareMobilEndpoint | None
-    rooms: IndiwareMobilEndpoint | None
+    forms: IndiwareMobilEndpoint | None = None
+    teachers: IndiwareMobilEndpoint | None = None
+    rooms: IndiwareMobilEndpoint | None = None
 
     @classmethod
     def from_stundenplan24(cls, sp24_url: str) -> IndiwareMobilEndpoints:
@@ -166,8 +166,8 @@ class TeachersSubstitutionPlanEndpoint(SubstitutionPlanEndpoint):
 
 @dataclasses.dataclass
 class SubstitutionPlanEndpoints:
-    students: SubstitutionPlanEndpoint | None
-    teachers: SubstitutionPlanEndpoint | None
+    students: SubstitutionPlanEndpoint | None = None
+    teachers: SubstitutionPlanEndpoint | None = None
 
     @classmethod
     def from_stundenplan24(cls, sp24_url: str) -> SubstitutionPlanEndpoints:
