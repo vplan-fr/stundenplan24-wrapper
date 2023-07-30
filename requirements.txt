@@ -1,3 +1,5 @@
 aiohttp~=3.8.4
+yarl
 pytz~=2023.3
 pubproxpy~=2.0.2
+requests

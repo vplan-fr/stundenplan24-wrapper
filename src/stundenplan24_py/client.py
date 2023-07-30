@@ -9,16 +9,15 @@ import typing
 import asyncio
 
 import aiohttp as aiohttp
+from yarl import URL
 
 from .endpoints import *
+from .errors import PlanClientError, PlanNotFoundError, UnauthorizedError, NotModifiedError
+from . import proxies
 
 __all__ = [
     "Credentials",
     "Hosting",
-    "PlanClientError",
-    "PlanNotFoundError",
-    "UnauthorizedError",
-    "NotModifiedError",
     "PlanResponse",
     "PlanClient",
     "IndiwareMobilClient",
@@ -85,24 +84,6 @@ class Hosting:
         )
 
 
-class PlanClientError(Exception):
-    def __init__(self, message: str, status_code: int):
-        super().__init__(message)
-        self.status_code = status_code
-
-
-class PlanNotFoundError(PlanClientError):
-    pass
-
-
-class UnauthorizedError(PlanClientError):
-    pass
-
-
-class NotModifiedError(PlanClientError):
-    pass
-
-
 @dataclasses.dataclass
 class PlanResponse:
     content: str
@@ -121,41 +102,73 @@ class PlanResponse:
 
 
 class PlanClientRequestContextManager:
-    def __init__(self, aiohttp_request_context_manager: aiohttp.client._RequestContextManager, no_delay: bool = False):
-        self.context_manager = aiohttp_request_context_manager
+    def __init__(self, session: aiohttp.ClientSession, request_kwargs: dict[str, typing.Any], no_delay: bool = False,
+                 proxy_provider: proxies.ProxyProvider | None = None):
+        self.session = session
+        self.request_kwargs = request_kwargs
         self.no_delay = no_delay
+        self.proxy_provider = proxy_provider
+
+        self.aiohttp_response_context_manager = None
 
     async def __aenter__(self):
         if not self.no_delay:
             await REQUEST_LOCK.acquire()
 
-        response = await self.context_manager.__aenter__()
+        for proxy in self.proxy_provider.iterate_proxies() if self.proxy_provider is not None else [None]:
+            self.aiohttp_response_context_manager = self.session.request(
+                **self.request_kwargs,
+                proxy_auth=proxy.auth if proxy is not None else None,
+                proxy=URL.build(host=proxy.url, port=proxy.port, scheme="http") if proxy is not None else None
+            )
 
-        if not self.no_delay:
-            async def release_lock():
-                await asyncio.sleep(_DELAY_BETWEEN_REQUESTS)
-                REQUEST_LOCK.release()
+            try:
+                response = await self.aiohttp_response_context_manager.__aenter__()
+            except aiohttp.ClientOSError as e:
+                if self.proxy_provider:
+                    if e.errno == 111:
+                        self.proxy_provider.mark_blocked(proxy)
+                    else:
+                        self.proxy_provider.mark_broken(proxy)
+                    continue
+                else:
+                    raise
+            except (aiohttp.ClientHttpProxyError, aiohttp.ServerConnectionError, TimeoutError) as e:
+                if self.proxy_provider:
+                    self.proxy_provider.mark_broken(proxy)
+                    continue
+                else:
+                    raise
 
-            asyncio.create_task(release_lock())
+            if self.proxy_provider:
+                self.proxy_provider.mark_working(proxy)
 
-        if response.status == 401:
-            raise UnauthorizedError(f"Invalid credentials for request to {response.url!r}.", response.status)
-        elif response.status == 304:
-            raise NotModifiedError(f"The requested ressource on {response.url!r} has not been modified since.",
-                                   response.status)
+            if not self.no_delay:
+                async def release_lock():
+                    await asyncio.sleep(_DELAY_BETWEEN_REQUESTS)
+                    REQUEST_LOCK.release()
 
-        return response
+                asyncio.create_task(release_lock())
+
+            if response.status == 401:
+                raise UnauthorizedError(f"Invalid credentials for request to {response.url!r}.", response.status)
+            elif response.status == 304:
+                raise NotModifiedError(f"The requested ressource on {response.url!r} has not been modified since.",
+                                       response.status)
+
+            return response
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        await self.context_manager.__aexit__(exc_type, exc_val, exc_tb)
+        await self.aiohttp_response_context_manager.__aexit__(exc_type, exc_val, exc_tb)
 
 
 class PlanClient(abc.ABC):
     def __init__(self, credentials: Credentials | None, session: aiohttp.ClientSession | None = None,
-                 no_delay: bool = False):
+                 no_delay: bool = False, proxy_provider: proxies.ProxyProvider | None = None):
         self.credentials = credentials
         self.session = aiohttp.ClientSession() if session is None else session
         self.no_delay = no_delay
+        self.proxy_provider = proxy_provider
 
     @abc.abstractmethod
     async def fetch_plan(self, date_or_filename: str | datetime.date | None = None,
@@ -195,7 +208,14 @@ class PlanClient(abc.ABC):
                 | kwargs.get("headers", {})
         )
 
-        return PlanClientRequestContextManager(self.session.request(**kwargs), no_delay=self.no_delay)
+        kwargs["timeout"] = aiohttp.ClientTimeout(connect=5)
+
+        return PlanClientRequestContextManager(
+            self.session,
+            kwargs,
+            no_delay=self.no_delay,
+            proxy_provider=self.proxy_provider
+        )
 
     async def close(self):
         await self.session.close()

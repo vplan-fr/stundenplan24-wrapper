@@ -7,7 +7,9 @@ import logging
 import typing
 from pathlib import Path
 
-from .client import PlanClientError
+import requests.exceptions
+
+from .errors import NoProxyAvailableError
 
 import aiohttp
 import pubproxpy.errors
@@ -21,6 +23,8 @@ class _Proxy:
     last_worked: datetime.datetime | None = None
     last_blocked: datetime.datetime | None = None
     last_broken: datetime.datetime | None = None
+
+    _last_outputted: datetime.datetime | None = None
 
     def serialize(self) -> dict:
         return {
@@ -62,7 +66,7 @@ class Proxies:
     def deserialize(cls, data: dict) -> Proxies:
         return cls(
             proxies={
-                tuple(map(str.strip, key.rsplit(":", 1))): _Proxy.deserialize(value)
+                ((s := key.rsplit(":", 1))[0], int(s[1])): _Proxy.deserialize(value)
                 for key, value in data["proxies"].items()
             }
         )
@@ -82,10 +86,6 @@ class Proxies:
 
     def __len__(self):
         return len(self.proxies)
-
-
-class NoProxyAvailableError(PlanClientError):
-    pass
 
 
 class ProxyProvider:
@@ -113,7 +113,7 @@ class ProxyProvider:
             self._logger.info(f"=> Loaded {len(self.proxies)} proxies.")
 
     def store_proxies(self):
-        self._logger.info(f"* Storing proxies at {str(self.cache_file)!r}.")
+        self._logger.debug(f"* Storing proxies at {str(self.cache_file)!r}.")
         self.cache_file.write_text(json.dumps(self.proxies.serialize()), "utf-8")
 
     def _fetch_proxies(self, proxy_fetcher: pubproxpy.ProxyFetcher) -> typing.Generator[Proxy, None, None]:
@@ -126,6 +126,9 @@ class ProxyProvider:
                 break
             except pubproxpy.errors.RateLimitError:
                 self._logger.info("=> Rate limit reached. :(")
+                break
+            except requests.exceptions.HTTPError as e:
+                self._logger.warning(f"=> HTTP error: {e}")
                 break
             else:
                 new = []
@@ -174,36 +177,47 @@ class ProxyProvider:
 
         all_proxies.sort(key=lambda proxy: proxy[1].last_blocked or datetime.datetime.min)
 
-        working = filter(lambda proxy: proxy[1].functionality_score > 0, all_proxies)
-        not_working = filter(lambda proxy: proxy[1].functionality_score <= 0, all_proxies)
+        working_proxies = list(filter(lambda proxy: proxy[1].functionality_score > 0, all_proxies))
+        not_working_proxies = list(filter(lambda proxy: proxy[1].functionality_score <= 0, all_proxies))
 
-        yield from map(lambda p: Proxies._proxy_to_proxy(*p[0], p[1]), working)
-        yield from map(lambda p: Proxies._proxy_to_proxy(*p[0], p[1]), not_working)
+        while working_proxies:
+            working_proxies.sort(key=lambda proxy: proxy[1]._last_outputted or datetime.datetime.min)
+            addr, _proxy = working_proxies.pop(0)
+            _proxy._last_outputted = datetime.datetime.now()
+            yield Proxies._proxy_to_proxy(*addr, _proxy)
 
-        try:
-            yield from self.fetch_proxies()
-        except pubproxpy.errors.ProxyError as e:
-            raise NoProxyAvailableError from e
+        while not_working_proxies:
+            not_working_proxies.sort(key=lambda proxy: proxy[1]._last_outputted or datetime.datetime.min)
+            addr, _proxy = not_working_proxies.pop(0)
+            _proxy._last_outputted = datetime.datetime.now()
+            yield Proxies._proxy_to_proxy(*addr, _proxy)
+
+        yield from self.fetch_proxies()
+
+        raise NoProxyAvailableError("No more proxies available.", None)
 
     def _update_save(self):
-        n = 10
+        n = 50
         self._i += 1
 
-        if self._i > n:
+        if self._i == n:
             self.store_proxies()
 
         self._i %= n
 
     def mark_blocked(self, proxy: Proxy):
+        self._logger.log(logging.DEBUG - 1, f"* Marking proxy {proxy!r} as blocked.")
         self.proxies._get_proxy(proxy.url, proxy.port).last_blocked = datetime.datetime.now()
         self._update_save()
 
     def mark_working(self, proxy: Proxy):
+        self._logger.log(logging.DEBUG - 1, f"* Marking proxy {proxy!r} as working.")
         self.proxies._get_proxy(proxy.url, proxy.port).last_worked = datetime.datetime.now()
         self.proxies._get_proxy(proxy.url, proxy.port).functionality_score += 1
         self._update_save()
 
     def mark_broken(self, proxy: Proxy):
+        self._logger.log(logging.DEBUG - 1, f"* Marking proxy {proxy!r} as broken.")
         self.proxies._get_proxy(proxy.url, proxy.port).last_broken = datetime.datetime.now()
         self.proxies._get_proxy(proxy.url, proxy.port).functionality_score -= 1
         self._update_save()
