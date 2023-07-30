@@ -26,6 +26,18 @@ __all__ = [
     "IndiwareStundenplanerClient"
 ]
 
+_DELAY_BETWEEN_REQUESTS = 0
+REQUEST_LOCK = asyncio.Lock()
+
+
+def set_min_delay_between_requests(delay_seconds: float):
+    global _DELAY_BETWEEN_REQUESTS
+    _DELAY_BETWEEN_REQUESTS = delay_seconds
+
+
+def get_min_delay_between_requests() -> float:
+    return _DELAY_BETWEEN_REQUESTS
+
 
 @dataclasses.dataclass
 class Credentials:
@@ -109,11 +121,22 @@ class PlanResponse:
 
 
 class PlanClientRequestContextManager:
-    def __init__(self, aiohttp_request_context_manager: aiohttp.client._RequestContextManager):
+    def __init__(self, aiohttp_request_context_manager: aiohttp.client._RequestContextManager, no_delay: bool = False):
         self.context_manager = aiohttp_request_context_manager
+        self.no_delay = no_delay
 
     async def __aenter__(self):
+        if not self.no_delay:
+            await REQUEST_LOCK.acquire()
+
         response = await self.context_manager.__aenter__()
+
+        if not self.no_delay:
+            async def release_lock():
+                await asyncio.sleep(_DELAY_BETWEEN_REQUESTS)
+                REQUEST_LOCK.release()
+
+            asyncio.create_task(release_lock())
 
         if response.status == 401:
             raise UnauthorizedError(f"Invalid credentials for request to {response.url!r}.", response.status)
@@ -128,9 +151,11 @@ class PlanClientRequestContextManager:
 
 
 class PlanClient(abc.ABC):
-    def __init__(self, credentials: Credentials | None, session: aiohttp.ClientSession | None = None):
+    def __init__(self, credentials: Credentials | None, session: aiohttp.ClientSession | None = None,
+                 no_delay: bool = False):
         self.credentials = credentials
         self.session = aiohttp.ClientSession() if session is None else session
+        self.no_delay = no_delay
 
     @abc.abstractmethod
     async def fetch_plan(self, date_or_filename: str | datetime.date | None = None,
@@ -170,7 +195,7 @@ class PlanClient(abc.ABC):
                 | kwargs.get("headers", {})
         )
 
-        return PlanClientRequestContextManager(self.session.request(**kwargs))
+        return PlanClientRequestContextManager(self.session.request(**kwargs), no_delay=self.no_delay)
 
     async def close(self):
         await self.session.close()
@@ -178,8 +203,8 @@ class PlanClient(abc.ABC):
 
 class IndiwareMobilClient(PlanClient):
     def __init__(self, endpoint: IndiwareMobilEndpoint, credentials: Credentials | None,
-                 session: aiohttp.ClientSession | None = None):
-        super().__init__(credentials, session)
+                 session: aiohttp.ClientSession | None = None, no_delay=True):
+        super().__init__(credentials, session, no_delay)
 
         self.endpoint = endpoint
 
@@ -252,8 +277,8 @@ class IndiwareMobilClient(PlanClient):
 
 class SubstitutionPlanClient(PlanClient):
     def __init__(self, endpoint: SubstitutionPlanEndpoint, credentials: Credentials | None,
-                 session: aiohttp.ClientSession | None = None):
-        super().__init__(credentials, session)
+                 session: aiohttp.ClientSession | None = None, no_delay=False):
+        super().__init__(credentials, session, no_delay)
 
         self.endpoint = endpoint
 
