@@ -118,8 +118,8 @@ class PlanClientRequestContextManager:
         if response.status == 401:
             raise UnauthorizedError(f"Invalid credentials for request to {response.url!r}.", response.status)
         elif response.status == 304:
-            raise NotModifiedError(f"The requested ressource on {response.url!r} has not been modified since "
-                                   f"{response.headers.get('If-Modified-Since')!r}.", response.status)
+            raise NotModifiedError(f"The requested ressource on {response.url!r} has not been modified since.",
+                                   response.status)
 
         return response
 
