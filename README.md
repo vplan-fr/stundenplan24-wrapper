@@ -15,8 +15,8 @@ There are four views for students:
 
 And two for teachers:
 
-- [ ] Indiware Mobil (Lehrer)
-- [ ] Vertretungsplan (Lehrer)
+- [X] Indiware Mobil (Lehrer)
+- [X] Vertretungsplan (Lehrer)
 
 They can be accessed at [www.stundenplan24.de](https://www.stundenplan24.de/).
 
