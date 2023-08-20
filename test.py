@@ -12,7 +12,7 @@ async def test_hosting(hosting: Hosting, name: str, session: aiohttp.ClientSessi
     client = IndiwareStundenplanerClient(hosting, session=session)
 
     path = Path("_schools") / name
-    path.mkdir(exist_ok=True)
+    (path / "vdaten").mkdir(exist_ok=True, parents=True)
 
     try:
         for indiware_mobil_client in client.indiware_mobil_clients:
@@ -56,7 +56,7 @@ async def test_hosting(hosting: Hosting, name: str, session: aiohttp.ClientSessi
 
 
 async def main():
-    with open("my_creds.json") as f:
+    with open("creds.json") as f:
         hostings = {name: Hosting.deserialize(data["hosting"]) for name, data in json.load(f).items()}
 
     for name, hosting in hostings.items():

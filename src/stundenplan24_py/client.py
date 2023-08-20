@@ -46,7 +46,7 @@ class Credentials:
 
 @dataclasses.dataclass
 class Hosting:
-    creds: dict[str, Credentials]
+    creds: Credentials
 
     indiware_mobil: IndiwareMobilEndpoints
     substitution_plan: SubstitutionPlanEndpoints
@@ -55,7 +55,7 @@ class Hosting:
 
     @classmethod
     def deserialize(cls, data: dict[str, typing.Any]):
-        creds = {type_: Credentials(**creds) for type_, creds in data["creds"].items()}
+        creds = Credentials(**data["creds"]) if data.get("creds") else None
         endpoints = data["endpoints"]
 
         if isinstance(endpoints, str):
@@ -352,23 +352,24 @@ class IndiwareStundenplanerClient:
         self.hosting = hosting
 
         self.form_plan_client = (
-            IndiwareMobilClient(hosting.indiware_mobil.forms, hosting.creds.get("students"), session=session)
+            IndiwareMobilClient(hosting.indiware_mobil.forms, hosting.creds, session=session)
             if hosting.indiware_mobil.forms is not None else None
         )
         self.teacher_plan_client = (
-            IndiwareMobilClient(hosting.indiware_mobil.teachers, hosting.creds.get("teachers"), session=session)
+            IndiwareMobilClient(hosting.indiware_mobil.teachers, hosting.creds
+                                , session=session)
             if hosting.indiware_mobil.teachers is not None else None
         )
         self.room_plan_client = (
-            IndiwareMobilClient(hosting.indiware_mobil.rooms, hosting.creds.get("teachers"), session=session)
+            IndiwareMobilClient(hosting.indiware_mobil.rooms, hosting.creds, session=session)
             if hosting.indiware_mobil.rooms is not None else None
         )
 
         self.students_substitution_plan_client = SubstitutionPlanClient(
-            hosting.substitution_plan.students, hosting.creds.get("students"), session=session
+            hosting.substitution_plan.students, hosting.creds, session=session
         ) if hosting.substitution_plan.students is not None else None
         self.teachers_substitution_plan_client = SubstitutionPlanClient(
-            hosting.substitution_plan.teachers, hosting.creds.get("teachers"), session=session
+            hosting.substitution_plan.teachers, hosting.creds, session=session
         ) if hosting.substitution_plan.teachers is not None else None
 
     @property
