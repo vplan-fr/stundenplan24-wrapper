@@ -118,8 +118,8 @@ class IndiwareMobilEndpoints:
     def from_stundenplan24(cls, sp24_url: str) -> IndiwareMobilEndpoints:
         return cls(
             forms=FormsIndiwareMobilEndpoint.from_stundenplan24(sp24_url),
-            teachers=FormsIndiwareMobilEndpoint.from_stundenplan24(sp24_url),
-            rooms=FormsIndiwareMobilEndpoint.from_stundenplan24(sp24_url)
+            teachers=TeachersIndiwareMobilEndpoint.from_stundenplan24(sp24_url),
+            rooms=RoomsIndiwareMobilEndpoint.from_stundenplan24(sp24_url)
         )
 
     @classmethod
