@@ -94,7 +94,7 @@ class Form:
 
         # parse periods
         form.periods = {}
-        for period in xml.find("KlStunden"):
+        for period in xml.find("KlStunden") or []:
             start, end = period.attrib["ZeitVon"].strip(), period.attrib["ZeitBis"].strip()
             try:
                 start = datetime.datetime.strptime(start, "%H:%M").time()
