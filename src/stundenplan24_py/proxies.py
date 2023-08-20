@@ -4,6 +4,7 @@ import dataclasses
 import datetime
 import json
 import logging
+import random
 import typing
 from pathlib import Path
 
@@ -18,7 +19,8 @@ import pubproxpy.errors
 @dataclasses.dataclass
 class _Proxy:
     auth: aiohttp.BasicAuth | None = None
-    functionality_score: int = 1
+    score: float = 1
+    tries: int = 0
 
     last_worked: datetime.datetime | None = None
     last_blocked: datetime.datetime | None = None
@@ -29,7 +31,8 @@ class _Proxy:
     def serialize(self) -> dict:
         return {
             "auth": self.auth.encode() if self.auth is not None else None,
-            "functionality_score": self.functionality_score,
+            "score": self.score,
+            "tries": self.tries,
             "last_worked": self.last_worked.isoformat() if self.last_worked is not None else None,
             "last_blocked": self.last_blocked.isoformat() if self.last_blocked is not None else None,
             "last_broken": self.last_broken.isoformat() if self.last_broken is not None else None
@@ -39,7 +42,8 @@ class _Proxy:
     def deserialize(cls, data: dict) -> typing.Self:
         return cls(
             auth=aiohttp.BasicAuth.decode(data["auth"]) if data["auth"] is not None else None,
-            functionality_score=data["functionality_score"],
+            score=data["score"],
+            tries=data["tries"],
             last_worked=datetime.datetime.fromisoformat(data["last_worked"]) if data["last_worked"] else None,
             last_blocked=datetime.datetime.fromisoformat(data["last_blocked"]) if data["last_blocked"] else None,
             last_broken=datetime.datetime.fromisoformat(data["last_broken"]) if data["last_broken"] else None,
@@ -156,12 +160,12 @@ class ProxyProvider:
     def fetch_proxies(self) -> typing.Generator[Proxy, None, None]:
         self._logger.info(f"* Fetching proxies from {getattr(pubproxpy.ProxyFetcher, '_BASE_URI', 'PubProxy')!r}.")
 
-        if len(self.proxies) > 200:
-            self._logger.info("=> More than 200 proxies, filtering.")
-            for (url, port), proxy in self.proxies.proxies.copy().items():
-                if proxy.functionality_score <= -5:
-                    self._logger.info(f"=> Removing {url!r}:{port!r} from proxy pool.")
-                    del self.proxies.proxies[url, port]
+        # if len(self.proxies) > 200:
+        #     self._logger.info("=> More than 200 proxies, filtering.")
+        #     for (url, port), proxy in self.proxies.proxies.copy().items():
+        #         if proxy.functionality_score <= -5:
+        #             self._logger.info(f"=> Removing {url!r}:{port!r} from proxy pool.")
+        #             del self.proxies.proxies[url, port]
 
         proxy_fetcher = pubproxpy.ProxyFetcher(
             https=True,
@@ -174,20 +178,32 @@ class ProxyProvider:
 
     def iterate_proxies(self) -> typing.Generator[Proxy, None, None]:
         all_proxies = list(self.proxies.proxies.items())
+        random.shuffle(all_proxies)
 
-        all_proxies.sort(key=lambda proxy: proxy[1].last_blocked or datetime.datetime.min)
-
-        working_proxies = list(filter(lambda proxy: proxy[1].functionality_score > 0, all_proxies))
-        not_working_proxies = list(filter(lambda proxy: proxy[1].functionality_score <= 0, all_proxies))
+        working_proxies = list(filter(lambda proxy: proxy[1].score >= 0.2, all_proxies))
+        not_working_proxies = list(filter(lambda proxy: proxy[1].score < 0.2, all_proxies))
 
         while working_proxies:
-            working_proxies.sort(key=lambda proxy: proxy[1]._last_outputted or datetime.datetime.min)
+            now = datetime.datetime.now()
+            working_proxies.sort(
+                key=lambda proxy:
+                lo
+                if (proxy[1]._last_outputted)
+                   and (now - (lo := proxy[1]._last_outputted) < datetime.timedelta(seconds=0.3))
+                else proxy[1].last_blocked or datetime.datetime.min
+            )
             addr, _proxy = working_proxies.pop(0)
             _proxy._last_outputted = datetime.datetime.now()
             yield Proxies._proxy_to_proxy(*addr, _proxy)
 
         while not_working_proxies:
-            not_working_proxies.sort(key=lambda proxy: proxy[1]._last_outputted or datetime.datetime.min)
+            now = datetime.datetime.now()
+            not_working_proxies.sort(
+                key=lambda proxy:
+                lo
+                if now - (lo := proxy[1]._last_outputted or datetime.datetime.min) < datetime.timedelta(seconds=0.3)
+                else proxy[1].last_blocked or datetime.datetime.min
+            )
             addr, _proxy = not_working_proxies.pop(0)
             _proxy._last_outputted = datetime.datetime.now()
             yield Proxies._proxy_to_proxy(*addr, _proxy)
@@ -212,12 +228,20 @@ class ProxyProvider:
 
     def mark_working(self, proxy: Proxy):
         self._logger.log(logging.DEBUG - 1, f"* Marking proxy {proxy!r} as working.")
-        self.proxies._get_proxy(proxy.url, proxy.port).last_worked = datetime.datetime.now()
-        self.proxies._get_proxy(proxy.url, proxy.port).functionality_score += 1
+
+        _proxy = self.proxies._get_proxy(proxy.url, proxy.port)
+        _proxy.last_worked = datetime.datetime.now()
+        _proxy.score = (_proxy.score * _proxy.tries + 1) / (_proxy.tries + 1)
+        _proxy.tries += 1
+
         self._update_save()
 
     def mark_broken(self, proxy: Proxy):
         self._logger.log(logging.DEBUG - 1, f"* Marking proxy {proxy!r} as broken.")
-        self.proxies._get_proxy(proxy.url, proxy.port).last_broken = datetime.datetime.now()
-        self.proxies._get_proxy(proxy.url, proxy.port).functionality_score -= 1
+
+        _proxy = self.proxies._get_proxy(proxy.url, proxy.port)
+        _proxy.last_broken = datetime.datetime.now()
+        _proxy.score = (_proxy.score * _proxy.tries) / (_proxy.tries + 1)
+        _proxy.tries += 1
+
         self._update_save()
