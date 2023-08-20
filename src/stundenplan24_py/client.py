@@ -133,7 +133,8 @@ class PlanClientRequestContextManager:
                     continue
                 else:
                     raise
-            except (aiohttp.ClientHttpProxyError, aiohttp.ServerConnectionError, TimeoutError) as e:
+            except (aiohttp.ClientHttpProxyError, aiohttp.ServerConnectionError, aiohttp.ClientError,
+                    TimeoutError, AttributeError) as e:
                 if self.proxy_provider:
                     self.proxy_provider.mark_broken(proxy)
                     continue
