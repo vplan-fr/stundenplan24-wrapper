@@ -124,6 +124,7 @@ class PlanClientRequestContextManager:
 
             try:
                 response = await self.aiohttp_response_context_manager.__aenter__()
+                await response.text(encoding="utf-8")
             except aiohttp.ClientOSError as e:
                 if self.proxy_provider:
                     if e.errno == 111:
@@ -133,8 +134,7 @@ class PlanClientRequestContextManager:
                     continue
                 else:
                     raise
-            except (aiohttp.ClientHttpProxyError, aiohttp.ServerConnectionError, aiohttp.ClientError,
-                    TimeoutError, AttributeError) as e:
+            except (aiohttp.ClientError, TimeoutError, AttributeError) as e:
                 if self.proxy_provider:
                     self.proxy_provider.mark_broken(proxy)
                     continue

@@ -166,8 +166,8 @@ class TeachersSubstitutionPlanEndpoint(SubstitutionPlanEndpoint):
 
 @dataclasses.dataclass
 class SubstitutionPlanEndpoints:
-    students: SubstitutionPlanEndpoint | None = None
-    teachers: SubstitutionPlanEndpoint | None = None
+    students: StudentsSubstitutionPlanEndpoint | None = None
+    teachers: TeachersSubstitutionPlanEndpoint | None = None
 
     @classmethod
     def from_stundenplan24(cls, sp24_url: str) -> SubstitutionPlanEndpoints:
