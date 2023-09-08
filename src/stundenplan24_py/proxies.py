@@ -177,36 +177,36 @@ class ProxyProvider:
         yield from self._fetch_proxies(proxy_fetcher)
 
     def iterate_proxies(self) -> typing.Generator[Proxy, None, None]:
-        all_proxies = list(self.proxies.proxies.items())
-        random.shuffle(all_proxies)
+        for _ in range(3):
+            proxies = self.proxies.proxies.copy()
 
-        working_proxies = list(filter(lambda proxy: proxy[1].score >= 0.2, all_proxies))
-        not_working_proxies = list(filter(lambda proxy: proxy[1].score < 0.2, all_proxies))
+            while proxies:
+                try:
+                    [p_addr, _p], = random.choices(
+                        population=list(proxies.items()),
+                        weights=[p.score for addr, p in proxies.items()],
+                        k=1
+                    )
+                except ValueError:
+                    # total weight == 0
+                    break
+                del proxies[p_addr]
 
-        while working_proxies:
-            now = datetime.datetime.now()
-            working_proxies.sort(
-                key=lambda proxy:
-                lo
-                if (proxy[1]._last_outputted)
-                   and (now - (lo := proxy[1]._last_outputted) < datetime.timedelta(seconds=0.3))
-                else proxy[1].last_blocked or datetime.datetime.min
-            )
-            addr, _proxy = working_proxies.pop(0)
-            _proxy._last_outputted = datetime.datetime.now()
-            yield Proxies._proxy_to_proxy(*addr, _proxy)
+                # breakpoint()
+                if _p.last_blocked and (datetime.datetime.now() - _p.last_blocked < datetime.timedelta(minutes=1)):
+                    continue
 
-        while not_working_proxies:
-            now = datetime.datetime.now()
-            not_working_proxies.sort(
-                key=lambda proxy:
-                lo
-                if now - (lo := proxy[1]._last_outputted or datetime.datetime.min) < datetime.timedelta(seconds=0.3)
-                else proxy[1].last_blocked or datetime.datetime.min
-            )
-            addr, _proxy = not_working_proxies.pop(0)
-            _proxy._last_outputted = datetime.datetime.now()
-            yield Proxies._proxy_to_proxy(*addr, _proxy)
+                self._logger.log(logging.DEBUG - 2, f"Providing proxy {p_addr!r}. Score: {_p.score:.2f}.")
+                yield Proxies._proxy_to_proxy(*p_addr, _p)
+
+        self._logger.warning("Ran out of good proxies. Trying proxies marked as broken...")
+
+        for p_addr, _p in self.proxies.proxies.items():
+            if _p.score != 0:
+                continue
+
+            self._logger.log(logging.DEBUG - 2, f"Providing proxy {p_addr!r}. Score: {_p.score:.2f}.")
+            yield Proxies._proxy_to_proxy(*p_addr, _p)
 
         yield from self.fetch_proxies()
 
@@ -231,7 +231,8 @@ class ProxyProvider:
 
         _proxy = self.proxies._get_proxy(proxy.url, proxy.port)
         _proxy.last_worked = datetime.datetime.now()
-        _proxy.score = (_proxy.score * _proxy.tries + 1) / (_proxy.tries + 1)
+        effective_tries = min(_proxy.tries, 200)
+        _proxy.score = (_proxy.score * effective_tries + 1) / (effective_tries + 1)
         _proxy.tries += 1
 
         self._update_save()
@@ -241,7 +242,8 @@ class ProxyProvider:
 
         _proxy = self.proxies._get_proxy(proxy.url, proxy.port)
         _proxy.last_broken = datetime.datetime.now()
-        _proxy.score = (_proxy.score * _proxy.tries) / (_proxy.tries + 1)
+        effective_tries = min(_proxy.tries, 200)
+        _proxy.score = (_proxy.score * effective_tries) / (effective_tries + 1)
         _proxy.tries += 1
 
         self._update_save()
