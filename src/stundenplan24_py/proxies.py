@@ -201,7 +201,7 @@ class ProxyProvider:
 
         self._logger.warning("Ran out of good proxies. Trying proxies marked as broken...")
 
-        for p_addr, _p in self.proxies.proxies.items():
+        for p_addr, _p in self.proxies.proxies.copy().items():
             if _p.score != 0:
                 continue
 
