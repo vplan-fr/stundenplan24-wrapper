@@ -168,10 +168,10 @@ class ProxyProvider:
         #             del self.proxies.proxies[url, port]
 
         proxy_fetcher = pubproxpy.ProxyFetcher(
-            https=True,
+            # https=True,
             post=True,
             protocol=pubproxpy.Protocol.HTTP,
-            time_to_connect=5
+            time_to_connect=10
         )
 
         yield from self._fetch_proxies(proxy_fetcher)
