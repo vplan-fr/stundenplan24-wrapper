@@ -8,7 +8,7 @@ import email.utils
 import typing
 import asyncio
 
-import aiohttp as aiohttp
+import aiohttp
 from yarl import URL
 
 from .endpoints import *
@@ -127,9 +127,11 @@ class PlanClientRequestContextManager:
                 await response.text(encoding="utf-8")
             except aiohttp.ClientOSError as e:
                 if self.proxy_provider:
-                    if e.errno == 111:
+                    if getattr(e, "host", proxy.url) != proxy.url and e.errno == 111:
+                        # error came from indiware servers and is errno is 111
                         self.proxy_provider.mark_blocked(proxy)
                     else:
+                        # error came from proxy -> broken
                         self.proxy_provider.mark_broken(proxy)
                     continue
                 else:
@@ -209,7 +211,7 @@ class PlanClient(abc.ABC):
                 | kwargs.get("headers", {})
         )
 
-        kwargs["timeout"] = aiohttp.ClientTimeout(connect=5)
+        kwargs["timeout"] = aiohttp.ClientTimeout(total=5)
 
         return PlanClientRequestContextManager(
             self.session,
