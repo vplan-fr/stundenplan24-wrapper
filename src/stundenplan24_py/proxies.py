@@ -93,11 +93,19 @@ class Proxies:
 
 
 class ProxyProvider:
-    def __init__(self, cache_file: Path):
+    def __init__(self, cache_file: Path, *, never_raise_out_of_proxies: bool = False):
         self._logger = logging.getLogger(self.__class__.__name__)
         self.cache_file = cache_file
 
         self.proxies: Proxies = Proxies(proxies={})
+        self.never_raise_out_of_proxies = never_raise_out_of_proxies
+
+        self.proxy_fetcher = pubproxpy.ProxyFetcher(
+            # https=True,
+            post=True,
+            protocol=pubproxpy.Protocol.HTTP,
+            time_to_connect=10
+        )
 
         self._i = 0
 
@@ -160,57 +168,66 @@ class ProxyProvider:
     def fetch_proxies(self) -> typing.Generator[Proxy, None, None]:
         self._logger.info(f"* Fetching proxies from {getattr(pubproxpy.ProxyFetcher, '_BASE_URI', 'PubProxy')!r}.")
 
-        # if len(self.proxies) > 200:
-        #     self._logger.info("=> More than 200 proxies, filtering.")
-        #     for (url, port), proxy in self.proxies.proxies.copy().items():
-        #         if proxy.functionality_score <= -5:
-        #             self._logger.info(f"=> Removing {url!r}:{port!r} from proxy pool.")
-        #             del self.proxies.proxies[url, port]
-
-        proxy_fetcher = pubproxpy.ProxyFetcher(
-            # https=True,
-            post=True,
-            protocol=pubproxpy.Protocol.HTTP,
-            time_to_connect=10
-        )
-
-        yield from self._fetch_proxies(proxy_fetcher)
+        yield from self._fetch_proxies(self.proxy_fetcher)
 
     def iterate_proxies(self) -> typing.Generator[Proxy, None, None]:
+        if self.never_raise_out_of_proxies:
+            yield from self._iterate_proxies_never_raise_out_of()
+        else:
+            yield from self._iterate_proxies()
+
+    def _iterate_proxies(self) -> typing.Generator[Proxy, None, None]:
         for _ in range(3):
-            proxies = self.proxies.proxies.copy()
+            yield from self._iterate_working_proxies()
 
-            while proxies:
-                try:
-                    [p_addr, _p], = random.choices(
-                        population=list(proxies.items()),
-                        weights=[p.score for addr, p in proxies.items()],
-                        k=1
-                    )
-                except ValueError:
-                    # total weight == 0
-                    break
-                del proxies[p_addr]
+        yield from self._iterate_broken_proxies()
 
-                # breakpoint()
-                if _p.last_blocked and (datetime.datetime.now() - _p.last_blocked < datetime.timedelta(minutes=1)):
-                    continue
+        yield from self.fetch_proxies()
 
-                self._logger.log(logging.DEBUG - 2, f"Providing proxy {p_addr!r}. Score: {_p.score:.2f}.")
-                yield Proxies._proxy_to_proxy(*p_addr, _p)
+        raise NoProxyAvailableError("No more proxies available.", None)
 
+    def _iterate_proxies_never_raise_out_of(self) -> typing.Generator[Proxy, None, None]:
+        while True:
+            yield from self._iterate_working_proxies()
+
+            yield from self._iterate_broken_proxies()
+
+            try:
+                yield from self.fetch_proxies()
+            except Exception as e:
+                self._logger.error("Tried to fetch proxies but error happened", exc_info=e)
+
+            self._logger.warning("Retrying working proxies.")
+
+    def _iterate_working_proxies(self):
+        proxies = self.proxies.proxies.copy()
+        while proxies:
+            try:
+                [p_addr, _p], = random.choices(
+                    population=list(proxies.items()),
+                    weights=[p.score for addr, p in proxies.items()],
+                    k=1
+                )
+            except ValueError:
+                # total weight == 0
+                break
+            del proxies[p_addr]
+
+            # breakpoint()
+            if _p.last_blocked and (datetime.datetime.now() - _p.last_blocked < datetime.timedelta(minutes=1)):
+                continue
+
+            self._logger.log(logging.DEBUG - 2, f"Providing proxy {p_addr!r}. Score: {_p.score:.2f}.")
+            yield Proxies._proxy_to_proxy(*p_addr, _p)
+
+    def _iterate_broken_proxies(self):
         self._logger.warning("Ran out of good proxies. Trying proxies marked as broken...")
-
         for p_addr, _p in self.proxies.proxies.copy().items():
             if _p.score != 0:
                 continue
 
             self._logger.log(logging.DEBUG - 2, f"Providing proxy {p_addr!r}. Score: {_p.score:.2f}.")
             yield Proxies._proxy_to_proxy(*p_addr, _p)
-
-        yield from self.fetch_proxies()
-
-        raise NoProxyAvailableError("No more proxies available.", None)
 
     def _update_save(self):
         n = 50
