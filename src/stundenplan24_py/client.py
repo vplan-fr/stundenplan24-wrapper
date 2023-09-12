@@ -136,7 +136,7 @@ class PlanClientRequestContextManager:
                     continue
                 else:
                     raise
-            except (aiohttp.ClientError, TimeoutError, AttributeError) as e:
+            except (aiohttp.ClientError, TimeoutError, asyncio.TimeoutError, AttributeError) as e:
                 if self.proxy_provider:
                     self.proxy_provider.mark_broken(proxy)
                     continue
