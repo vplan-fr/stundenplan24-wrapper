@@ -46,8 +46,8 @@ class IndiwareMobilPlan:
         day.date = parse_plan_date(head.find("DatumPlan").text)
         day.filename = head.find("datei").text
         day.native = int(head.find("nativ").text)
-        day.week = int(head.find("woche").text)
-        day.days_per_week = int(head.find("tageprowoche").text)
+        day.week = int(head.find("woche").text) if head.find("woche") else 1
+        day.days_per_week = int(head.find("tageprowoche").text) if head.find("tageprowoche") else 5
         try:
             day.school_number = int(head.find("schulnummer").text)
         except (AttributeError, TypeError):
@@ -199,10 +199,10 @@ class Lesson:
         lesson = cls()
 
         lesson.period = int(xml.find("St").text)
-        lesson.start = (datetime.datetime.strptime(xml.find("Beginn").text.strip().replace(".", ":"), "%H:%M").time()
-                        if xml.find("Beginn").text else None)
-        lesson.end = (datetime.datetime.strptime(xml.find("Ende").text.strip().replace(".", ":"), "%H:%M").time()
-                      if xml.find("Ende").text else None)
+        lesson.start = (datetime.datetime.strptime(beg.text.strip().replace(".", ":"), "%H:%M").time()
+                        if (beg := xml.find("Beginn")) and beg.text else None)
+        lesson.end = (datetime.datetime.strptime(end.text.strip().replace(".", ":"), "%H:%M").time()
+                      if (end := xml.find("Ende")) and end.text else None)
 
         lesson.subject = Value(xml.find("Fa").text, xml.find("Fa").get("FaAe") == "FaGeaendert")
         lesson.teacher = Value(xml.find("Le").text, xml.find("Le").get("LeAe") == "LeGeaendert")
