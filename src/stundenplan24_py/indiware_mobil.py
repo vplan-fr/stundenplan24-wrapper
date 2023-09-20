@@ -45,7 +45,7 @@ class IndiwareMobilPlan:
         )
         day.date = parse_plan_date(head.find("DatumPlan").text)
         day.filename = head.find("datei").text
-        day.native = int(head.find("nativ").text)
+        day.native = int(nativ.text) if (nativ := head.find("nativ")) else None
         day.week = int(head.find("woche").text) if head.find("woche") else 1
         day.days_per_week = int(head.find("tageprowoche").text) if head.find("tageprowoche") else 5
         try:
