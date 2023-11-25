@@ -3,6 +3,7 @@ from __future__ import annotations
 import abc
 import dataclasses
 import datetime
+import os
 import urllib.parse
 import email.utils
 import typing
@@ -271,7 +272,8 @@ class IndiwareMobilClient(PlanClient):
 
         url = urllib.parse.urljoin(self.endpoint.url, Endpoints.indiware_mobil_vpdir)
 
-        with aiohttp.MultipartWriter("form-data") as mpwriter:
+        boundary = f"---------Embt-Boundary--{os.urandom(8).hex()}"
+        with aiohttp.MultipartWriter("form-data", boundary) as mpwriter:
             # noinspection PyTypeChecker
             mpwriter.append(
                 "I N D I W A R E",
