@@ -123,8 +123,14 @@ class PlanClientRequestContextManager:
             )
 
             try:
-                response = await self.aiohttp_response_context_manager.__aenter__()
-                await response.text(encoding="utf-8")
+                response: aiohttp.ClientResponse
+
+                async def fetch():
+                    nonlocal response
+                    response = await self.aiohttp_response_context_manager.__aenter__()
+                    await response.text(encoding="utf-8")
+
+                await asyncio.wait_for(fetch(), timeout=60)
             except aiohttp.ClientOSError as e:
                 if self.proxy_provider:
                     if getattr(e, "host", proxy.url) != proxy.url and e.errno == 111:
@@ -142,24 +148,25 @@ class PlanClientRequestContextManager:
                     continue
                 else:
                     raise
+            else:
+                if self.proxy_provider:
+                    self.proxy_provider.mark_working(proxy)
 
-            if self.proxy_provider:
-                self.proxy_provider.mark_working(proxy)
+                if not self.no_delay:
+                    async def release_lock():
+                        await asyncio.sleep(_DELAY_BETWEEN_REQUESTS)
+                        REQUEST_LOCK.release()
 
-            if not self.no_delay:
-                async def release_lock():
-                    await asyncio.sleep(_DELAY_BETWEEN_REQUESTS)
-                    REQUEST_LOCK.release()
+                    asyncio.create_task(release_lock())
 
-                asyncio.create_task(release_lock())
+                # noinspection PyUnboundLocalVariable
+                if response.status == 401:
+                    raise UnauthorizedError(f"Invalid credentials for request to {response.url!r}.", response.status)
+                elif response.status == 304:
+                    raise NotModifiedError(f"The requested ressource on {response.url!r} has not been modified since.",
+                                           response.status)
 
-            if response.status == 401:
-                raise UnauthorizedError(f"Invalid credentials for request to {response.url!r}.", response.status)
-            elif response.status == 304:
-                raise NotModifiedError(f"The requested ressource on {response.url!r} has not been modified since.",
-                                       response.status)
-
-            return response
+                return response
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await self.aiohttp_response_context_manager.__aexit__(exc_type, exc_val, exc_tb)
