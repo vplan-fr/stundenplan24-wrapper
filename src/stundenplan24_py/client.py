@@ -186,12 +186,12 @@ class PlanClient(abc.ABC):
         ...
 
     def make_request(
-            self,
-            url: str,
-            method: str = "GET",
-            if_modified_since: datetime.datetime | None = None,
-            if_none_match: str | None = None,
-            **kwargs
+        self,
+        url: str,
+        method: str = "GET",
+        if_modified_since: datetime.datetime | None = None,
+        if_none_match: str | None = None,
+        **kwargs
     ) -> PlanClientRequestContextManager:
         auth = (
             aiohttp.BasicAuth(self.credentials.username, self.credentials.password)
@@ -212,10 +212,10 @@ class PlanClient(abc.ABC):
         if_none_match_header = {"If-None-Match": if_none_match} if if_none_match is not None else {}
 
         kwargs["headers"] = (
-                {"User-Agent": "Indiware"}
-                | if_modified_since_header
-                | if_none_match_header
-                | kwargs.get("headers", {})
+            {"User-Agent": "Indiware"}
+            | if_modified_since_header
+            | if_none_match_header
+            | kwargs.get("headers", {})
         )
 
         kwargs["timeout"] = aiohttp.ClientTimeout(total=5)
@@ -239,9 +239,9 @@ class IndiwareMobilClient(PlanClient):
         self.endpoint = endpoint
 
     async def fetch_plan(
-            self,
-            date_or_filename: str | datetime.date | None = None,
-            **kwargs
+        self,
+        date_or_filename: str | datetime.date | None = None,
+        **kwargs
     ) -> PlanResponse:
         if date_or_filename is None:
             _url = self.endpoint.plan_file_url2
@@ -323,9 +323,9 @@ class SubstitutionPlanClient(PlanClient):
         return urllib.parse.urljoin(self.endpoint.url, _url)
 
     async def fetch_plan(
-            self,
-            date_or_filename: str | datetime.date | None = None,
-            **kwargs
+        self,
+        date_or_filename: str | datetime.date | None = None,
+        **kwargs
     ) -> PlanResponse:
         url = self.get_url(date_or_filename)
 
@@ -397,6 +397,6 @@ class IndiwareStundenplanerClient:
 
     async def close(self):
         await asyncio.gather(*(
-                [client.close() for client in self.indiware_mobil_clients]
-                + [client.close() for client in self.substitution_plan_clients]
+            [client.close() for client in self.indiware_mobil_clients]
+            + [client.close() for client in self.substitution_plan_clients]
         ))
