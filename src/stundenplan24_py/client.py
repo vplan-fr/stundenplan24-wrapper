@@ -1,20 +1,28 @@
 from __future__ import annotations
 
 import abc
+import concurrent.futures
 import dataclasses
 import datetime
-import os
 import urllib.parse
 import email.utils
 import typing
 import asyncio
+import logging
 
-import aiohttp
-from yarl import URL
+import requests.auth
+import urllib3.fields
+import urllib3.exceptions
+import urllib3.connection
 
 from .endpoints import *
 from .errors import PlanClientError, PlanNotFoundError, UnauthorizedError, NotModifiedError
 from . import proxies
+
+logging.getLogger("urllib3").setLevel(logging.CRITICAL)
+logging.getLogger("urllib3").propagate = False
+logging.getLogger("charset_normalizer").setLevel(logging.CRITICAL)
+logging.getLogger("charset_normalizer").propagate = False
 
 __all__ = [
     "Credentials",
@@ -88,7 +96,7 @@ class Hosting:
 @dataclasses.dataclass
 class PlanResponse:
     content: str
-    response: aiohttp.ClientResponse
+    response: requests.Response
 
     @property
     def last_modified(self) -> datetime.datetime | None:
@@ -103,81 +111,95 @@ class PlanResponse:
 
 
 class PlanClientRequestContextManager:
-    def __init__(self, session: aiohttp.ClientSession, request_kwargs: dict[str, typing.Any], no_delay: bool = False,
+    def __init__(self, session: requests.Session, request_kwargs: dict[str, typing.Any], no_delay: bool = False,
                  proxy_provider: proxies.ProxyProvider | None = None):
         self.session = session
         self.request_kwargs = request_kwargs
         self.no_delay = no_delay
         self.proxy_provider = proxy_provider
 
-        self.aiohttp_response_context_manager = None
-
     async def __aenter__(self):
         if not self.no_delay:
             await REQUEST_LOCK.acquire()
 
-        for proxy in self.proxy_provider.iterate_proxies() if self.proxy_provider is not None else [None]:
-            self.aiohttp_response_context_manager = self.session.request(
-                **self.request_kwargs,
-                proxy_auth=proxy.auth if proxy is not None else None,
-                proxy=URL.build(host=proxy.url, port=proxy.port, scheme="http") if proxy is not None else None
-            )
+        try:
+            _num_proxy_tries = 0
 
-            try:
-                response: aiohttp.ClientResponse
+            for proxy in self.proxy_provider.iterate_proxies() if self.proxy_provider is not None else [None]:
+                _num_proxy_tries += 1
 
-                async def fetch():
-                    nonlocal response
-                    response = await self.aiohttp_response_context_manager.__aenter__()
-                    await response.text(encoding="utf-8")
+                proxy_url = str(urllib3.util.Url(
+                    host=proxy.url,
+                    auth=f"{proxy.auth.login}:{proxy.auth.password}" if proxy.auth is not None else None,
+                    port=str(proxy.port),
+                    scheme="http"
+                ))
 
-                await asyncio.wait_for(fetch(), timeout=60)
-            except aiohttp.ClientOSError as e:
-                if self.proxy_provider:
-                    if getattr(e, "host", proxy.url) != proxy.url and e.errno == 111:
-                        # error came from indiware servers and is errno is 111
-                        self.proxy_provider.mark_blocked(proxy)
-                    else:
-                        # error came from proxy -> broken
+                def do_request():
+                    return self.session.request(
+                        **self.request_kwargs,
+                        proxies={
+                            "http": proxy_url,
+                            "https": proxy_url
+                        } if proxy is not None else None,
+                        timeout=5,
+                    )
+
+                try:
+                    response = await asyncio.get_running_loop().run_in_executor(_thread_pool_executor, do_request)
+
+                except (TimeoutError, requests.exceptions.ReadTimeout, requests.exceptions.ProxyError,
+                        requests.exceptions.SSLError) as e:
+                    if self.proxy_provider:
                         self.proxy_provider.mark_broken(proxy)
-                    continue
+                        continue
+                    else:
+                        raise
+                except requests.ConnectTimeout as e:
+                    if self.proxy_provider:
+                        match e.args:
+                            case (urllib3.exceptions.MaxRetryError(reason=urllib3.exceptions.ConnectTimeoutError(args=(
+                                  urllib3.connection.HTTPSConnection(host=proxy.url), _))), ):
+                                self.proxy_provider.mark_broken(proxy)
+                                continue
+                            case _:
+                                raise
+                    else:
+                        raise
                 else:
-                    raise
-            except (aiohttp.ClientError, TimeoutError, asyncio.TimeoutError, AttributeError) as e:
-                if self.proxy_provider:
-                    self.proxy_provider.mark_broken(proxy)
-                    continue
-                else:
-                    raise
-            else:
-                if self.proxy_provider:
-                    self.proxy_provider.mark_working(proxy)
+                    if self.proxy_provider:
+                        self.proxy_provider.mark_working(proxy)
 
-                if not self.no_delay:
-                    async def release_lock():
-                        await asyncio.sleep(_DELAY_BETWEEN_REQUESTS)
-                        REQUEST_LOCK.release()
+                    if response.status_code == 401:
+                        raise UnauthorizedError(f"Invalid credentials for request to {response.url!r}.",
+                                                response.status_code)
+                    elif response.status_code == 304:
+                        raise NotModifiedError(
+                            f"The requested ressource at {response.url!r} has not been modified since.",
+                            response.status_code)
 
-                    asyncio.create_task(release_lock())
+                    response._num_proxy_tries = _num_proxy_tries
+                    return response
+        finally:
+            if not self.no_delay:
+                async def release_lock():
+                    await asyncio.sleep(_DELAY_BETWEEN_REQUESTS)
+                    REQUEST_LOCK.release()
 
-                # noinspection PyUnboundLocalVariable
-                if response.status == 401:
-                    raise UnauthorizedError(f"Invalid credentials for request to {response.url!r}.", response.status)
-                elif response.status == 304:
-                    raise NotModifiedError(f"The requested ressource on {response.url!r} has not been modified since.",
-                                           response.status)
-
-                return response
+                asyncio.create_task(release_lock())
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        await self.aiohttp_response_context_manager.__aexit__(exc_type, exc_val, exc_tb)
+        pass
+
+
+_thread_pool_executor = concurrent.futures.ThreadPoolExecutor()
 
 
 class PlanClient(abc.ABC):
-    def __init__(self, credentials: Credentials | None, session: aiohttp.ClientSession | None = None,
+    def __init__(self, credentials: Credentials | None, session: requests.Session | None = None,
                  no_delay: bool = False, proxy_provider: proxies.ProxyProvider | None = None):
         self.credentials = credentials
-        self.session = aiohttp.ClientSession() if session is None else session
+        self.session = requests.Session() if session is None else session
         self.no_delay = no_delay
         self.proxy_provider = proxy_provider
 
@@ -194,15 +216,11 @@ class PlanClient(abc.ABC):
         if_none_match: str | None = None,
         **kwargs
     ) -> PlanClientRequestContextManager:
-        auth = (
-            aiohttp.BasicAuth(self.credentials.username, self.credentials.password)
-            if self.credentials is not None else None
-        )
-
         kwargs = dict(
             method=method,
             url=url,
-            auth=auth,
+            auth=requests.auth.HTTPBasicAuth(self.credentials.username, self.credentials.password)
+            if self.credentials is not None else None,
             **kwargs
         )
 
@@ -219,8 +237,6 @@ class PlanClient(abc.ABC):
             | kwargs.get("headers", {})
         )
 
-        kwargs["timeout"] = aiohttp.ClientTimeout(total=5)
-
         return PlanClientRequestContextManager(
             self.session,
             kwargs,
@@ -229,12 +245,12 @@ class PlanClient(abc.ABC):
         )
 
     async def close(self):
-        await self.session.close()
+        self.session.close()
 
 
 class IndiwareMobilClient(PlanClient):
     def __init__(self, endpoint: IndiwareMobilEndpoint, credentials: Credentials | None,
-                 session: aiohttp.ClientSession | None = None, no_delay=True):
+                 session: requests.Session | None = None, no_delay=True):
         super().__init__(credentials, session, no_delay)
 
         self.endpoint = endpoint
@@ -256,14 +272,14 @@ class IndiwareMobilClient(PlanClient):
         url = urllib.parse.urljoin(self.endpoint.url, _url)
 
         async with self.make_request(url, **kwargs) as response:
-            if response.status == 404:
-                raise PlanNotFoundError(f"No plan for {date_or_filename=} found.", response.status)
-            elif response.status != 200:
-                raise PlanClientError(f"Unexpected status code {response.status} for request to {url=}.",
-                                      response.status)
+            if response.status_code == 404:
+                raise PlanNotFoundError(f"No plan for {date_or_filename=} found.", response.status_code)
+            elif response.status_code != 200:
+                raise PlanClientError(f"Unexpected status code {response.status_code} for request to {url=}.",
+                                      response.status_code)
 
             return PlanResponse(
-                content=await response.text(encoding="utf-8"),
+                content=response.text,
                 response=response
             )
 
@@ -272,25 +288,17 @@ class IndiwareMobilClient(PlanClient):
 
         url = urllib.parse.urljoin(self.endpoint.url, Endpoints.indiware_mobil_vpdir)
 
-        boundary = f"---------Embt-Boundary--{os.urandom(8).hex()}"
-        with aiohttp.MultipartWriter("form-data", boundary) as mpwriter:
-            # noinspection PyTypeChecker
-            mpwriter.append(
-                "I N D I W A R E",
-                {"Content-Disposition": 'form-data; name="pw"'}
-            )
-            # noinspection PyTypeChecker
-            mpwriter.append(
-                self.endpoint.vpdir_password,
-                {"Content-Disposition": 'form-data; name="art"'}
-            )
+        multipart_dict = {
+            "pw": (None, "I N D I W A R E"),
+            "art": (None, self.endpoint.vpdir_password)
+        }
 
-        async with self.make_request(url, method="POST", data=mpwriter, **kwargs) as response:
-            if response.status != 200:
-                raise PlanClientError(f"Unexpected status code {response.status} for request to {url=}.",
-                                      response.status)
+        async with self.make_request(url, method="POST", files=multipart_dict, **kwargs) as response:
+            if response.status_code != 200:
+                raise PlanClientError(f"Unexpected status code {response.status_code} for request to {url=}.",
+                                      response.status_code)
 
-            _out = (await response.text(encoding="utf-8")).split(";")
+            _out = response.text.split(";")
 
         out: dict[str, datetime.datetime] = {}
         for i in range(0, len(_out), 2):
@@ -309,7 +317,7 @@ class IndiwareMobilClient(PlanClient):
 
 class SubstitutionPlanClient(PlanClient):
     def __init__(self, endpoint: SubstitutionPlanEndpoint, credentials: Credentials | None,
-                 session: aiohttp.ClientSession | None = None, no_delay=False):
+                 session: requests.Session | None = None, no_delay=False):
         super().__init__(credentials, session, no_delay)
 
         self.endpoint = endpoint
@@ -332,14 +340,14 @@ class SubstitutionPlanClient(PlanClient):
         url = self.get_url(date_or_filename)
 
         async with self.make_request(url, **kwargs) as response:
-            if response.status == 404:
-                raise PlanNotFoundError(f"No plan for {date_or_filename=} found.", response.status)
-            elif response.status != 200:
-                raise PlanClientError(f"Unexpected status code {response.status} for request to {url=}.",
-                                      response.status)
+            if response.status_code == 404:
+                raise PlanNotFoundError(f"No plan for {date_or_filename=} found.", response.status_code)
+            elif response.status_code != 200:
+                raise PlanClientError(f"Unexpected status code {response.status_code} for request to {url=}.",
+                                      response.status_code)
 
             return PlanResponse(
-                content=await response.text(encoding="utf-8"),
+                content=response.text,
                 response=response
             )
 
@@ -347,11 +355,11 @@ class SubstitutionPlanClient(PlanClient):
         url = self.get_url(date_or_filename)
 
         async with self.make_request(url, method="HEAD") as response:
-            if response.status == 404:
-                raise PlanNotFoundError(f"No plan for {date_or_filename=} found.", response.status)
-            elif response.status != 200:
-                raise PlanClientError(f"Unexpected status code {response.status} for request to {url=}.",
-                                      response.status)
+            if response.status_code == 404:
+                raise PlanNotFoundError(f"No plan for {date_or_filename=} found.", response.status_code)
+            elif response.status_code != 200:
+                raise PlanClientError(f"Unexpected status code {response.status_code} for request to {url=}.",
+                                      response.status_code)
 
             plan_response = PlanResponse("", response)
 
@@ -359,7 +367,7 @@ class SubstitutionPlanClient(PlanClient):
 
 
 class IndiwareStundenplanerClient:
-    def __init__(self, hosting: Hosting, session: aiohttp.ClientSession | None = None):
+    def __init__(self, hosting: Hosting, session: requests.Session | None = None):
         self.hosting = hosting
 
         self.form_plan_client = (
@@ -367,8 +375,7 @@ class IndiwareStundenplanerClient:
             if hosting.indiware_mobil.forms is not None else None
         )
         self.teacher_plan_client = (
-            IndiwareMobilClient(hosting.indiware_mobil.teachers, hosting.creds
-                                , session=session)
+            IndiwareMobilClient(hosting.indiware_mobil.teachers, hosting.creds, session=session)
             if hosting.indiware_mobil.teachers is not None else None
         )
         self.room_plan_client = (
