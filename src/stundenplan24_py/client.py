@@ -221,7 +221,7 @@ class PlanClientRequestContextManager:
         pass
 
 
-_thread_pool_executor = concurrent.futures.ThreadPoolExecutor()
+_thread_pool_executor = concurrent.futures.ProcessPoolExecutor()
 
 
 class PlanClient(abc.ABC):
