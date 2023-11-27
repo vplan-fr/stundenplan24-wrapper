@@ -4,6 +4,7 @@ import abc
 import concurrent.futures
 import dataclasses
 import datetime
+import http.client
 import urllib.parse
 import email.utils
 import typing
@@ -110,6 +111,17 @@ class PlanResponse:
         return self.response.headers.get("ETag", None)
 
 
+def _do_request(session, request_kwargs, proxy_url):
+    return session.request(
+        **request_kwargs,
+        proxies={
+            "http": proxy_url,
+            "https": proxy_url
+        } if proxy_url is not None else None,
+        timeout=5,
+    )
+
+
 class PlanClientRequestContextManager:
     def __init__(self, session: requests.Session, request_kwargs: dict[str, typing.Any], no_delay: bool = False,
                  proxy_provider: proxies.ProxyProvider | None = None):
@@ -131,23 +143,15 @@ class PlanClientRequestContextManager:
                 proxy_url = str(urllib3.util.Url(
                     host=proxy.url,
                     auth=f"{proxy.auth.login}:{proxy.auth.password}" if proxy.auth is not None else None,
-                    port=str(proxy.port),
+                    port=proxy.port,
                     scheme="http"
-                ))
-
-                def do_request():
-                    return self.session.request(
-                        **self.request_kwargs,
-                        proxies={
-                            "http": proxy_url,
-                            "https": proxy_url
-                        } if proxy is not None else None,
-                        timeout=5,
-                    )
+                )) if proxy is not None else None
 
                 try:
-                    response = await asyncio.get_running_loop().run_in_executor(_thread_pool_executor, do_request)
-
+                    response = await asyncio.get_running_loop().run_in_executor(
+                        _thread_pool_executor,
+                        _do_request, self.session, self.request_kwargs, proxy_url
+                    )
                 except (TimeoutError, requests.exceptions.ReadTimeout, requests.exceptions.ProxyError,
                         requests.exceptions.SSLError) as e:
                     if self.proxy_provider:
@@ -155,17 +159,41 @@ class PlanClientRequestContextManager:
                         continue
                     else:
                         raise
-                except requests.ConnectTimeout as e:
-                    if self.proxy_provider:
-                        match e.args:
-                            case (urllib3.exceptions.MaxRetryError(reason=urllib3.exceptions.ConnectTimeoutError(args=(
-                                  urllib3.connection.HTTPSConnection(host=proxy.url), _))), ):
-                                self.proxy_provider.mark_broken(proxy)
-                                continue
-                            case _:
-                                raise
-                    else:
+                except requests.ConnectionError as e:
+                    if not self.proxy_provider:
                         raise
+                    match e:
+                        # @formatter:off
+                        case (
+                            requests.ConnectTimeout(
+                                args=(urllib3.exceptions.MaxRetryError(
+                                    reason=urllib3.exceptions.ConnectTimeoutError(
+                                        args=(urllib3.connection.HTTPSConnection(host=proxy.url), _))), ))
+                        ):
+                            # @formatter:on
+                            self.proxy_provider.mark_broken(proxy)
+                            continue
+                        # @formatter:off
+                        case (
+                            requests.ConnectionError(
+                                args=(urllib3.exceptions.ProtocolError(
+                                    args=(_, http.client.RemoteDisconnected())),))
+                        ):
+                            # @formatter:on
+                            self.proxy_provider.mark_broken(proxy)
+                            continue
+                        case (
+                            requests.ConnectionError(
+                                args=(urllib3.exceptions.ProtocolError(
+                                    args=(_, ConnectionResetError())),))
+                        ):
+                            # @formatter:on
+                            self.proxy_provider.mark_broken(proxy)
+                            continue
+
+                        case _:
+                            raise
+
                 else:
                     if self.proxy_provider:
                         self.proxy_provider.mark_working(proxy)
@@ -178,6 +206,7 @@ class PlanClientRequestContextManager:
                             f"The requested ressource at {response.url!r} has not been modified since.",
                             response.status_code)
 
+                    response.encoding = "utf-8"  # who thought it's a good idea to g
                     response._num_proxy_tries = _num_proxy_tries
                     return response
         finally:
