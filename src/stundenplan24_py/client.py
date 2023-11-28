@@ -153,13 +153,46 @@ class PlanClientRequestContextManager:
                         _do_request, self.session, self.request_kwargs, proxy_url
                     )
                 except (TimeoutError, requests.exceptions.ReadTimeout, requests.exceptions.ProxyError,
-                        requests.exceptions.SSLError, http.client.RemoteDisconnected, ConnectionResetError,
-                        urllib3.exceptions.ConnectTimeoutError) as e:
+                        requests.exceptions.SSLError, urllib3.exceptions.ConnectTimeoutError):
                     if self.proxy_provider:
                         self.proxy_provider.mark_broken(proxy)
                         continue
                     else:
                         raise
+                except requests.ConnectionError as e:
+                    if not self.proxy_provider:
+                        raise
+                    match e:
+                        # @formatter:off
+                        case (
+                            requests.ConnectTimeout(
+                                args=(urllib3.exceptions.MaxRetryError(
+                                    reason=urllib3.exceptions.ConnectTimeoutError(
+                                        args=(urllib3.connection.HTTPSConnection(host=proxy.url), _))), ))
+                        ):
+                            # @formatter:on
+                            self.proxy_provider.mark_broken(proxy)
+                            continue
+                        # @formatter:off
+                        case (
+                            requests.ConnectionError(
+                                args=(urllib3.exceptions.ProtocolError(
+                                    args=(_, http.client.RemoteDisconnected())),))
+                        ):
+                            # @formatter:on
+                            self.proxy_provider.mark_broken(proxy)
+                            continue
+                        case (
+                            requests.ConnectionError(
+                                args=(urllib3.exceptions.ProtocolError(
+                                    args=(_, ConnectionResetError())),))
+                        ):
+                            # @formatter:on
+                            self.proxy_provider.mark_broken(proxy)
+                            continue
+                        case _:
+                            logging.error("Unhandled requests.ConnectionError.", exc_info=e)
+
                 else:
                     if self.proxy_provider:
                         self.proxy_provider.mark_working(proxy)
