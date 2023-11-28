@@ -191,6 +191,7 @@ class PlanClientRequestContextManager:
                             self.proxy_provider.mark_broken(proxy)
                             continue
                         case _:
+                            self.proxy_provider.mark_broken(proxy)
                             logging.error("Unhandled requests.ConnectionError.", exc_info=e)
 
                 else:
