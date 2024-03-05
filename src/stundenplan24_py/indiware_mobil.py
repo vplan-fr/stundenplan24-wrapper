@@ -19,7 +19,7 @@ __all__ = [
 
 class IndiwareMobilPlan:
     plan_type: str
-    timestamp: datetime.datetime  # time of last update
+    timestamp: datetime.datetime | None  # time of last update
     date: datetime.date
     filename: str
     native: str
@@ -42,7 +42,7 @@ class IndiwareMobilPlan:
         day.timestamp = (
             pytz.timezone("Europe/Berlin")
             .localize(datetime.datetime.strptime(head.find("zeitstempel").text, "%d.%m.%Y, %H:%M"))
-        )
+        ) if head.find("zeitstempel") is not None else None
         day.date = parse_plan_date(head.find("DatumPlan").text)
         day.filename = head.find("datei").text
         day.native = int(nativ.text) if (nativ := head.find("nativ")) is not None else None
