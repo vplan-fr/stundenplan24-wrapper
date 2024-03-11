@@ -1,6 +1,6 @@
 [project]
 name = "stundenplan24-wrapper"
-version = "8.0.3"
+version = "8.0.4"
 description = "A wrapper for the Stundenplan24 APIs."
 readme = "README.md"
 requires-python = ">=3.9"
