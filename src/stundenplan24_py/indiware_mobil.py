@@ -54,7 +54,8 @@ class IndiwareMobilPlan:
             day.school_number = None
 
         # parse free days
-        day.free_days = parse_free_days(xml.find("FreieTage"))
+        ft_tag = xml.find("FreieTage")
+        day.free_days = parse_free_days(ft_tag) if ft_tag is not None else []
 
         # parse classes
         day.forms = []
