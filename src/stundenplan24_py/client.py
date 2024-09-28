@@ -123,12 +123,14 @@ def _do_request(session, request_kwargs, proxy_url):
 
 
 class PlanClientRequestContextManager:
-    def __init__(self, session: requests.Session, request_kwargs: dict[str, typing.Any], no_delay: bool = False,
+    def __init__(self, session: requests.Session, request_kwargs: dict[str, typing.Any],
+                 request_executor: concurrent.futures.Executor, no_delay: bool = False,
                  proxy_provider: proxies.ProxyProvider | None = None):
         self.session = session
         self.request_kwargs = request_kwargs
         self.no_delay = no_delay
         self.proxy_provider = proxy_provider
+        self.request_executor = request_executor
 
     async def __aenter__(self):
         if not self.no_delay:
@@ -149,7 +151,7 @@ class PlanClientRequestContextManager:
 
                 try:
                     response = await asyncio.get_running_loop().run_in_executor(
-                        _thread_pool_executor,
+                        self.request_executor,
                         _do_request, self.session, self.request_kwargs, proxy_url
                     )
                 except (TimeoutError, requests.exceptions.ReadTimeout, requests.exceptions.ProxyError,
@@ -185,7 +187,7 @@ class PlanClientRequestContextManager:
                         case (
                             requests.ConnectionError(
                                 args=(urllib3.exceptions.ProtocolError(
-                                    args=(_, ConnectionResetError())),))
+                                    args=(_, ConnectionResetError())), ))
                         ):
                             # @formatter:on
                             self.proxy_provider.mark_broken(proxy)
@@ -221,16 +223,17 @@ class PlanClientRequestContextManager:
         pass
 
 
-_thread_pool_executor = concurrent.futures.ProcessPoolExecutor()
-
-
 class PlanClient(abc.ABC):
     def __init__(self, credentials: Credentials | None, session: requests.Session | None = None,
-                 no_delay: bool = False, proxy_provider: proxies.ProxyProvider | None = None):
+                 no_delay: bool = False, proxy_provider: proxies.ProxyProvider | None = None,
+                 request_executor: concurrent.futures.Executor | None = None):
         self.credentials = credentials
         self.session = requests.Session() if session is None else session
         self.no_delay = no_delay
         self.proxy_provider = proxy_provider
+        self.request_executor = (
+            concurrent.futures.ThreadPoolExecutor() if request_executor is None else request_executor
+        )
 
     @abc.abstractmethod
     async def fetch_plan(self, date_or_filename: str | datetime.date | None = None,
@@ -270,7 +273,8 @@ class PlanClient(abc.ABC):
             self.session,
             kwargs,
             no_delay=self.no_delay,
-            proxy_provider=self.proxy_provider
+            proxy_provider=self.proxy_provider,
+            request_executor=self.request_executor
         )
 
     async def close(self):
