@@ -4,25 +4,19 @@ import abc
 import concurrent.futures
 import dataclasses
 import datetime
-import http.client
 import urllib.parse
 import email.utils
 import typing
 import asyncio
 import logging
 
-import requests.auth
-import urllib3.fields
-import urllib3.exceptions
-import urllib3.connection
+import curl_cffi.requests
+
+import pipifax_proxy_manager
 
 from .endpoints import *
 from .errors import PlanClientError, PlanNotFoundError, UnauthorizedError, NotModifiedError
-from . import proxies
 
-logging.getLogger("urllib3").setLevel(logging.CRITICAL)
-logging.getLogger("urllib3").propagate = False
-logging.getLogger("charset_normalizer").setLevel(logging.CRITICAL)
 logging.getLogger("charset_normalizer").propagate = False
 
 __all__ = [
@@ -34,18 +28,6 @@ __all__ = [
     "SubstitutionPlanClient",
     "IndiwareStundenplanerClient"
 ]
-
-_DELAY_BETWEEN_REQUESTS = 0
-REQUEST_LOCK = asyncio.Lock()
-
-
-def set_min_delay_between_requests(delay_seconds: float):
-    global _DELAY_BETWEEN_REQUESTS
-    _DELAY_BETWEEN_REQUESTS = delay_seconds
-
-
-def get_min_delay_between_requests() -> float:
-    return _DELAY_BETWEEN_REQUESTS
 
 
 @dataclasses.dataclass
@@ -97,7 +79,7 @@ class Hosting:
 @dataclasses.dataclass
 class PlanResponse:
     content: str
-    response: requests.Response
+    response: curl_cffi.Response
 
     @property
     def last_modified(self) -> datetime.datetime | None:
@@ -122,115 +104,12 @@ def _do_request(session, request_kwargs, proxy_url):
     )
 
 
-class PlanClientRequestContextManager:
-    def __init__(self, session: requests.Session, request_kwargs: dict[str, typing.Any],
-                 request_executor: concurrent.futures.Executor, no_delay: bool = False,
-                 proxy_provider: proxies.ProxyProvider | None = None):
-        self.session = session
-        self.request_kwargs = request_kwargs
-        self.no_delay = no_delay
-        self.proxy_provider = proxy_provider
-        self.request_executor = request_executor
-
-    async def __aenter__(self):
-        if not self.no_delay:
-            await REQUEST_LOCK.acquire()
-
-        try:
-            _num_proxy_tries = 0
-
-            for proxy in self.proxy_provider.iterate_proxies() if self.proxy_provider is not None else [None]:
-                _num_proxy_tries += 1
-
-                proxy_url = str(urllib3.util.Url(
-                    host=proxy.url,
-                    auth=f"{proxy.auth.login}:{proxy.auth.password}" if proxy.auth is not None else None,
-                    port=proxy.port,
-                    scheme="http"
-                )) if proxy is not None else None
-
-                try:
-                    response = await asyncio.get_running_loop().run_in_executor(
-                        self.request_executor,
-                        _do_request, self.session, self.request_kwargs, proxy_url
-                    )
-                except (TimeoutError, requests.exceptions.ReadTimeout, requests.exceptions.ProxyError,
-                        requests.exceptions.SSLError, urllib3.exceptions.ConnectTimeoutError):
-                    if self.proxy_provider:
-                        self.proxy_provider.mark_broken(proxy)
-                        continue
-                    else:
-                        raise
-                except requests.ConnectionError as e:
-                    if not self.proxy_provider:
-                        raise
-                    match e:
-                        # @formatter:off
-                        case (
-                            requests.ConnectTimeout(
-                                args=(urllib3.exceptions.MaxRetryError(
-                                    reason=urllib3.exceptions.ConnectTimeoutError(
-                                        args=(urllib3.connection.HTTPSConnection(host=proxy.url), _))), ))
-                        ):
-                            # @formatter:on
-                            self.proxy_provider.mark_broken(proxy)
-                            continue
-                        # @formatter:off
-                        case (
-                            requests.ConnectionError(
-                                args=(urllib3.exceptions.ProtocolError(
-                                    args=(_, http.client.RemoteDisconnected())),))
-                        ):
-                            # @formatter:on
-                            self.proxy_provider.mark_broken(proxy)
-                            continue
-                        case (
-                            requests.ConnectionError(
-                                args=(urllib3.exceptions.ProtocolError(
-                                    args=(_, ConnectionResetError())), ))
-                        ):
-                            # @formatter:on
-                            self.proxy_provider.mark_broken(proxy)
-                            continue
-                        case _:
-                            self.proxy_provider.mark_broken(proxy)
-                            logging.error("Unhandled requests.ConnectionError.", exc_info=e)
-
-                else:
-                    if self.proxy_provider:
-                        self.proxy_provider.mark_working(proxy)
-
-                    if response.status_code == 401:
-                        raise UnauthorizedError(f"Invalid credentials for request to {response.url!r}.",
-                                                response.status_code)
-                    elif response.status_code == 304:
-                        raise NotModifiedError(
-                            f"The requested ressource at {response.url!r} has not been modified since.",
-                            response.status_code)
-
-                    response.encoding = "utf-8"  # who thought it's a good idea to g
-                    response._num_proxy_tries = _num_proxy_tries
-                    return response
-        finally:
-            if not self.no_delay:
-                async def release_lock():
-                    await asyncio.sleep(_DELAY_BETWEEN_REQUESTS)
-                    REQUEST_LOCK.release()
-
-                asyncio.create_task(release_lock())
-
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        pass
-
-
 class PlanClient(abc.ABC):
-    def __init__(self, credentials: Credentials | None, session: requests.Session | None = None,
-                 no_delay: bool = False, proxy_provider: proxies.ProxyProvider | None = None,
+    def __init__(self, credentials: Credentials | None,
+                 proxied_session: pipifax_proxy_manager.ProxiedSession | None = None,
                  request_executor: concurrent.futures.Executor | None = None):
         self.credentials = credentials
-        self.session = requests.Session() if session is None else session
-        self.no_delay = no_delay
-        self.proxy_provider = proxy_provider
+        self.proxied_session = proxied_session
         self.request_executor = (
             concurrent.futures.ThreadPoolExecutor() if request_executor is None else request_executor
         )
@@ -240,21 +119,21 @@ class PlanClient(abc.ABC):
                          if_modified_since: datetime.datetime | None = None) -> PlanResponse:
         ...
 
-    def make_request(
+    async def make_request(
         self,
         url: str,
         method: str = "GET",
         if_modified_since: datetime.datetime | None = None,
         if_none_match: str | None = None,
         **kwargs
-    ) -> PlanClientRequestContextManager:
+    ):
         kwargs = dict(
             method=method,
             url=url,
-            auth=requests.auth.HTTPBasicAuth(self.credentials.username, self.credentials.password)
+            auth=(self.credentials.username, self.credentials.password)
             if self.credentials is not None else None,
-            **kwargs
-        )
+            timeout=8,
+        ) | kwargs
 
         if_modified_since_header = {"If-Modified-Since": (
             if_modified_since.astimezone(datetime.timezone.utc).strftime("%a, %d %b %Y %H:%M:%S GMT")
@@ -269,22 +148,50 @@ class PlanClient(abc.ABC):
             | kwargs.get("headers", {})
         )
 
-        return PlanClientRequestContextManager(
-            self.session,
-            kwargs,
-            no_delay=self.no_delay,
-            proxy_provider=self.proxy_provider,
-            request_executor=self.request_executor
-        )
+        if self.proxied_session is None:
+            response = await asyncio.get_event_loop().run_in_executor(
+                self.request_executor,
+                lambda: curl_cffi.requests.request(**kwargs)
+            )
+        else:
+            def handler(fut, proxy, i):
+                try:
+                    response = fut.result()
+                except curl_cffi.requests.exceptions.RequestException:
+                    raise pipifax_proxy_manager.RetryError
 
-    async def close(self):
-        self.session.close()
+                response._num_proxy_tries = i + 1
+                # print(response.text)
+                return response
+
+            response = await asyncio.get_event_loop().run_in_executor(
+                self.request_executor,
+                lambda: self.proxied_session.request(
+                    handler=handler,
+                    anonymity_level="anonymous",
+                    rotation_rate=60,
+                    curl_kwargs=kwargs,
+                    reason="https://stundenplan24.de"
+                )
+            )
+
+        if response.status_code == 401:
+            raise UnauthorizedError(
+                f"Invalid credentials for request to {response.url!r}.",
+                response.status_code
+            )
+        elif response.status_code == 304:
+            raise NotModifiedError(
+                f"The requested ressource at {response.url!r} has not been modified since.",
+                response.status_code
+            )
+        else:
+            return response
 
 
 class IndiwareMobilClient(PlanClient):
-    def __init__(self, endpoint: IndiwareMobilEndpoint, credentials: Credentials | None,
-                 session: requests.Session | None = None, no_delay=True):
-        super().__init__(credentials, session, no_delay)
+    def __init__(self, endpoint: IndiwareMobilEndpoint, credentials: Credentials | None):
+        super().__init__(credentials)
 
         self.endpoint = endpoint
 
@@ -304,34 +211,45 @@ class IndiwareMobilClient(PlanClient):
 
         url = urllib.parse.urljoin(self.endpoint.url, _url)
 
-        async with self.make_request(url, **kwargs) as response:
-            if response.status_code == 404:
-                raise PlanNotFoundError(f"No plan for {date_or_filename=} found.", response.status_code)
-            elif response.status_code != 200:
-                raise PlanClientError(f"Unexpected status code {response.status_code} for request to {url=}.",
-                                      response.status_code)
+        response = await self.make_request(url, **kwargs)
 
-            return PlanResponse(
-                content=response.text,
-                response=response
-            )
+        if response.status_code == 404:
+            raise PlanNotFoundError(f"No plan for {date_or_filename=} found.", response.status_code)
+        elif response.status_code != 200:
+            raise PlanClientError(f"Unexpected status code {response.status_code} for request to {url=}.",
+                                  response.status_code)
+
+        return PlanResponse(
+            content=response.text,
+            response=response
+        )
 
     async def fetch_dates(self, **kwargs) -> dict[str, datetime.datetime]:
         """Return a dictionary of available file names and their last modification date."""
 
         url = urllib.parse.urljoin(self.endpoint.url, Endpoints.indiware_mobil_vpdir)
 
-        multipart_dict = {
-            "pw": (None, "I N D I W A R E"),
-            "art": (None, self.endpoint.vpdir_password)
-        }
+        multipart_dict = curl_cffi.CurlMime.from_list(
+            [
+                {
+                    "name": "pw",
+                    "data": b"I N D I W A R E",
 
-        async with self.make_request(url, method="POST", files=multipart_dict, **kwargs) as response:
-            if response.status_code != 200:
-                raise PlanClientError(f"Unexpected status code {response.status_code} for request to {url=}.",
-                                      response.status_code)
+                },
+                {
+                    "name": "art",
+                    "data": self.endpoint.vpdir_password.encode()
+                }
+            ]
+        )
 
-            _out = response.text.split(";")
+        response = await self.make_request(url, method="POST", multipart=multipart_dict, **kwargs)
+
+        if response.status_code != 200:
+            raise PlanClientError(f"Unexpected status code {response.status_code} for request to {url=}.",
+                                  response.status_code)
+
+        _out = response.text.split(";")
 
         out: dict[str, datetime.datetime] = {}
         for i in range(0, len(_out), 2):
@@ -349,9 +267,8 @@ class IndiwareMobilClient(PlanClient):
 
 
 class SubstitutionPlanClient(PlanClient):
-    def __init__(self, endpoint: SubstitutionPlanEndpoint, credentials: Credentials | None,
-                 session: requests.Session | None = None, no_delay=False):
-        super().__init__(credentials, session, no_delay)
+    def __init__(self, endpoint: SubstitutionPlanEndpoint, credentials: Credentials | None):
+        super().__init__(credentials)
 
         self.endpoint = endpoint
 
@@ -372,55 +289,58 @@ class SubstitutionPlanClient(PlanClient):
     ) -> PlanResponse:
         url = self.get_url(date_or_filename)
 
-        async with self.make_request(url, **kwargs) as response:
-            if response.status_code == 404:
-                raise PlanNotFoundError(f"No plan for {date_or_filename=} found.", response.status_code)
-            elif response.status_code != 200:
-                raise PlanClientError(f"Unexpected status code {response.status_code} for request to {url=}.",
-                                      response.status_code)
+        response = await self.make_request(url, **kwargs)
 
-            return PlanResponse(
-                content=response.text,
-                response=response
-            )
+        if response.status_code == 404:
+            raise PlanNotFoundError(f"No plan for {date_or_filename=} found.", response.status_code)
+        elif response.status_code != 200:
+            raise PlanClientError(f"Unexpected status code {response.status_code} for request to {url=}.",
+                                  response.status_code)
 
-    async def get_metadata(self, date_or_filename: str | datetime.date | None = None) -> tuple[datetime.datetime, str]:
+        return PlanResponse(
+            content=response.text,
+            response=response
+        )
+
+    async def get_metadata(self, date_or_filename: str | datetime.date | None = None) -> tuple[
+        datetime.datetime, str]:
         url = self.get_url(date_or_filename)
 
-        async with self.make_request(url, method="HEAD") as response:
-            if response.status_code == 404:
-                raise PlanNotFoundError(f"No plan for {date_or_filename=} found.", response.status_code)
-            elif response.status_code != 200:
-                raise PlanClientError(f"Unexpected status code {response.status_code} for request to {url=}.",
-                                      response.status_code)
+        response = await self.make_request(url, method="HEAD")
 
-            plan_response = PlanResponse("", response)
+        if response.status_code == 404:
+            raise PlanNotFoundError(f"No plan for {date_or_filename=} found.", response.status_code)
+        elif response.status_code != 200:
+            raise PlanClientError(f"Unexpected status code {response.status_code} for request to {url=}.",
+                                  response.status_code)
 
-            return plan_response.last_modified, plan_response.etag
+        plan_response = PlanResponse("", response)
+
+        return plan_response.last_modified, plan_response.etag
 
 
 class IndiwareStundenplanerClient:
-    def __init__(self, hosting: Hosting, session: requests.Session | None = None):
+    def __init__(self, hosting: Hosting):
         self.hosting = hosting
 
         self.form_plan_client = (
-            IndiwareMobilClient(hosting.indiware_mobil.forms, hosting.creds, session=session)
+            IndiwareMobilClient(hosting.indiware_mobil.forms, hosting.creds)
             if hosting.indiware_mobil.forms is not None else None
         )
         self.teacher_plan_client = (
-            IndiwareMobilClient(hosting.indiware_mobil.teachers, hosting.creds, session=session)
+            IndiwareMobilClient(hosting.indiware_mobil.teachers, hosting.creds)
             if hosting.indiware_mobil.teachers is not None else None
         )
         self.room_plan_client = (
-            IndiwareMobilClient(hosting.indiware_mobil.rooms, hosting.creds, session=session)
+            IndiwareMobilClient(hosting.indiware_mobil.rooms, hosting.creds)
             if hosting.indiware_mobil.rooms is not None else None
         )
 
         self.students_substitution_plan_client = SubstitutionPlanClient(
-            hosting.substitution_plan.students, hosting.creds, session=session
+            hosting.substitution_plan.students, hosting.creds
         ) if hosting.substitution_plan.students is not None else None
         self.teachers_substitution_plan_client = SubstitutionPlanClient(
-            hosting.substitution_plan.teachers, hosting.creds, session=session
+            hosting.substitution_plan.teachers, hosting.creds
         ) if hosting.substitution_plan.teachers is not None else None
 
     @property

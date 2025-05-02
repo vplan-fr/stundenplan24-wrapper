@@ -1,6 +1,6 @@
 [project]
 name = "stundenplan24-wrapper"
-version = "8.1.0"
+version = "9.0.0"
 description = "A wrapper for the Stundenplan24 APIs."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -8,7 +8,8 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Operating System :: OS Independent",
 ]
-dynamic = ["dependencies"]
-
-[tool.setuptools.dynamic]
-dependencies = {file = ["requirements.txt"]}
+dependencies = [
+    "pytz~=2025.2",
+    "curl_cffi",
+    "pipifax-proxy-manager@git+https://github.com/Belissimo-T/pipifax-modules.git/#subdirectory=pipifax-proxy-manager"
+]
